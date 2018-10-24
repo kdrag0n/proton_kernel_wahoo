@@ -1472,6 +1472,21 @@ static ssize_t ddr_mbist_store(struct device *dev,
 }
 static DEVICE_ATTR_WO(ddr_mbist);
 
+/* Halt CPU only */
+static ssize_t cpu_cg_store(struct device *dev,
+			       struct device_attribute *attr,
+			       const char *buf, size_t count)
+{
+	/* CPU clock gated */
+	MNH_SCU_OUTf(CCU_CLK_CTL, CPU_CLKEN, 0);
+
+	/* CPU clock enable based on CPU_CLKEN */
+	MNH_SCU_OUTf(CCU_CLK_CTL, HALT_CPUCG_EN, 0);
+
+	return count;
+}
+static DEVICE_ATTR_WO(cpu_cg);
+
 static struct attribute *mnh_sm_attrs[] = {
 	&dev_attr_stage_fw.attr,
 	&dev_attr_poweron.attr,
@@ -1496,6 +1511,7 @@ static struct attribute *mnh_sm_attrs[] = {
 	&dev_attr_mem_read.attr,
 	&dev_attr_error_event.attr,
 	&dev_attr_fw_ver.attr,
+	&dev_attr_cpu_cg.attr,
 #if IS_ENABLED(CONFIG_MNH_SIG)
 	&dev_attr_verify_fw.attr,
 #endif
