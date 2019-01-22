@@ -44,6 +44,7 @@ subdir-y                     += mod
 subdir-$(CONFIG_SECURITY_SELINUX) += selinux
 subdir-$(CONFIG_DTC)         += dtc-aosp
 subdir-$(CONFIG_GDB_SCRIPTS) += gdb
+subdir-$(CONFIG_BUILD_ARM64_EMBEDDED_DTB) += ufdt
 
 # Let clean descend into subdirs
 subdir-	+= basic kconfig package
