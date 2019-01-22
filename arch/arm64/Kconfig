@@ -1113,6 +1113,12 @@ config BUILD_ARM64_DTC_FLAGS
 config BUILD_ARM64_APPLY_DTBO
 	bool "apply device tree overlay"
 
+config BUILD_ARM64_EMBEDDED_DTB
+	bool "Embed DTB into kernel image"
+	depends on OF
+	help
+	  Embed DTB directly into kernel image and ignore DTB from bootloader.
+
 config BUILD_ARM64_DT_OVERLAY
 	bool "enable DT overlay compilation support"
 	depends on OF
