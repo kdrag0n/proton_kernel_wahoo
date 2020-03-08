@@ -1,4 +1,4 @@
-snd-soc-qdsp6v2-objs += msm-dai-q6-v2.o msm-pcm-q6-v2.o msm-pcm-routing-v2.o \
+obj-y += msm-dai-q6-v2.o msm-pcm-q6-v2.o msm-pcm-routing-v2.o \
 			msm-compress-q6-v2.o \
 			msm-pcm-afe-v2.o msm-pcm-voip-v2.o \
 			msm-pcm-voice-v2.o msm-dai-q6-hdmi-v2.o \
@@ -6,7 +6,7 @@ snd-soc-qdsp6v2-objs += msm-dai-q6-v2.o msm-pcm-q6-v2.o msm-pcm-routing-v2.o \
 			msm-audio-effects-q6-v2.o msm-pcm-loopback-v2.o \
 			msm-dai-slim.o \
 			adsp_err.o
-obj-$(CONFIG_SND_SOC_QDSP6V2) += snd-soc-qdsp6v2.o msm-pcm-dtmf-v2.o \
+obj-$(CONFIG_SND_SOC_QDSP6V2) += msm-pcm-dtmf-v2.o \
 				 msm-dai-stub-v2.o
 obj-$(CONFIG_SND_HWDEP) += msm-pcm-routing-devdep.o
 obj-$(CONFIG_DOLBY_DAP) += msm-dolby-dap-config.o
