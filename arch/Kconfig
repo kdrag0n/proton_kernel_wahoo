@@ -423,6 +423,14 @@ config CC_STACKPROTECTOR_STRONG
 
 endchoice
 
+config LLVM_POLLY
+	bool "Enable LLVM polyhedral loop optimization (Polly)"
+	help
+	  This option enables LLVM's polyhedral loop optimizer known as Polly.
+	  Polly is able to optimize various loops throughout the kernel for
+	  maximum cache locality. This requires a Clang toolchain explicitly
+	  compiled with Polly support.
+
 config HAVE_ARCH_WITHIN_STACK_FRAMES
 	bool
 	help
