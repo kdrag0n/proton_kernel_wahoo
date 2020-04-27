@@ -221,39 +221,6 @@ static const struct file_operations aa_fs_profile_remove = {
 };
 
 
-static void profile_query_cb(struct aa_profile *profile, struct aa_perms *perms,
-			     const char *match_str, size_t match_len)
-{
-	struct aa_perms tmp;
-	struct aa_dfa *dfa;
-	unsigned int state = 0;
-
-	if (profile_unconfined(profile))
-		return;
-	if (profile->file.dfa && *match_str == AA_CLASS_FILE) {
-		dfa = profile->file.dfa;
-		state = aa_dfa_match_len(dfa, profile->file.start,
-					 match_str + 1, match_len - 1);
-		tmp = nullperms;
-		if (state) {
-			struct path_cond cond = { };
-			tmp = aa_compute_fperms(dfa, state, &cond);
-		}
-	} else if (profile->policy.dfa) {
-		if (!PROFILE_MEDIATES_SAFE(profile, *match_str))
-			return;	/* no change to current perms */
-		dfa = profile->policy.dfa;
-		state = aa_dfa_match_len(dfa, profile->policy.start[0],
-					 match_str, match_len);
-		if (state)
-			aa_compute_perms(dfa, state, &tmp);
-		else
-			tmp = nullperms;
-	}
-	aa_apply_modes_to_perms(profile, &tmp);
-	aa_perms_accum_raw(perms, &tmp);
-}
-
 /**
  * query_data - queries a policy and writes its data to buf
  * @buf: the resulting data is stored here (NOT NULL)
@@ -373,6 +340,7 @@ static ssize_t query_label(char *buf, size_t buf_len,
 	char *label_name, *match_str;
 	size_t label_name_len, match_len;
 	struct aa_perms perms;
+	unsigned int state = 0;
 	struct label_it i;
 
 	if (!query_len)
@@ -398,15 +366,27 @@ static ssize_t query_label(char *buf, size_t buf_len,
 	if (IS_ERR(label))
 		return PTR_ERR(label);
 
-	perms = allperms;
-	if (ns_only) {
-		label_for_each_in_ns(i, labels_ns(label), label, profile) {
-			profile_query_cb(profile, &perms, match_str, match_len);
+	aa_perms_all(&perms);
+	label_for_each_confined(i, label, profile) {
+		struct aa_perms tmp;
+		struct aa_dfa *dfa;
+		if (profile->file.dfa && *match_str == AA_CLASS_FILE) {
+			dfa = profile->file.dfa;
+			state = aa_dfa_match_len(dfa, profile->file.start,
+						 match_str + 1, match_len - 1);
+		} else if (profile->policy.dfa) {
+			if (!PROFILE_MEDIATES_SAFE(profile, *match_str))
+				continue;	/* no change to current perms */
+			dfa = profile->policy.dfa;
+			state = aa_dfa_match_len(dfa, profile->policy.start[0],
+						 match_str, match_len);
 		}
-	} else {
-		label_for_each(i, label, profile) {
-			profile_query_cb(profile, &perms, match_str, match_len);
-		}
+		if (state)
+			aa_compute_perms(dfa, state, &tmp);
+		else
+			aa_perms_clear(&tmp);
+		aa_apply_modes_to_perms(profile, &tmp);
+		aa_perms_accum_raw(&perms, &tmp);
 	}
 	aa_put_label(label);
 
