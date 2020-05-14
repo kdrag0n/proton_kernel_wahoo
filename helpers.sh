@@ -161,12 +161,10 @@ function mkzip() {
 	fi
 
 	# Copy kernel image
-	cp "$kroot/out/arch/$arch/boot/Image.gz" "$kroot/flasher/"
+	cp "$kroot/out/arch/$arch/boot/Image.lz4-dtb" "$kroot/flasher/"
 
-	# Copy device tree blob
-	rm -fr "$kroot/flasher/dtbs"
-	mkdir "$kroot/flasher/dtbs"
-	cp "$kroot/out/arch/$arch/boot/dts/qcom/sm8150-v2.dtb" "$kroot/flasher/dtbs/"
+	# Copy DTBO
+	cp "$kroot/out/arch/$arch/boot/dtbo.img" "$kroot/flasher/"
 
 	# Generate version banner to be shown during flash
 	echo "  • Installing $build_type build $version" >| "$kroot/flasher/version"
