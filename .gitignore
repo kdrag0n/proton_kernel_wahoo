@@ -116,3 +116,11 @@ all.config
 
 # Object directory
 out/
+
+# Flasher artifacts
+flasher/*.dtb
+flasher/dtbo*.img
+flasher/Image*
+flasher/version
+builds/
+*.zip
