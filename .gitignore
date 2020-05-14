@@ -113,3 +113,14 @@ all.config
 
 # Kdevelop4
 *.kdev4
+
+# Object directory
+out/
+
+# Flasher artifacts
+flasher/*.dtb
+flasher/dtbo*.img
+flasher/Image*
+flasher/version
+builds/
+*.zip
