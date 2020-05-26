@@ -668,6 +668,7 @@ static const struct nla_policy fq_policy[TCA_FQ_MAX + 1] = {
 	[TCA_FQ_FLOW_MAX_RATE]		= { .type = NLA_U32 },
 	[TCA_FQ_BUCKETS_LOG]		= { .type = NLA_U32 },
 	[TCA_FQ_FLOW_REFILL_DELAY]	= { .type = NLA_U32 },
+	[TCA_FQ_ORPHAN_MASK]		= { .type = NLA_U32 },
 };
 
 static int fq_change(struct Qdisc *sch, struct nlattr *opt)
@@ -706,7 +707,7 @@ static int fq_change(struct Qdisc *sch, struct nlattr *opt)
 	if (tb[TCA_FQ_QUANTUM]) {
 		u32 quantum = nla_get_u32(tb[TCA_FQ_QUANTUM]);
 
-		if (quantum > 0)
+		if (quantum > 0 && quantum <= (1 << 20))
 			q->quantum = quantum;
 		else
 			err = -EINVAL;
@@ -829,20 +830,24 @@ nla_put_failure:
 static int fq_dump_stats(struct Qdisc *sch, struct gnet_dump *d)
 {
 	struct fq_sched_data *q = qdisc_priv(sch);
-	u64 now = ktime_get_ns();
-	struct tc_fq_qd_stats st = {
-		.gc_flows		= q->stat_gc_flows,
-		.highprio_packets	= q->stat_internal_packets,
-		.tcp_retrans		= q->stat_tcp_retrans,
-		.throttled		= q->stat_throttled,
-		.flows_plimit		= q->stat_flows_plimit,
-		.pkts_too_long		= q->stat_pkts_too_long,
-		.allocation_errors	= q->stat_allocation_errors,
-		.flows			= q->flows,
-		.inactive_flows		= q->inactive_flows,
-		.throttled_flows	= q->throttled_flows,
-		.time_next_delayed_flow	= q->time_next_delayed_flow - now,
-	};
+	struct tc_fq_qd_stats st;
+
+	sch_tree_lock(sch);
+
+	st.gc_flows		  = q->stat_gc_flows;
+	st.highprio_packets	  = q->stat_internal_packets;
+	st.tcp_retrans		  = q->stat_tcp_retrans;
+	st.throttled		  = q->stat_throttled;
+	st.flows_plimit		  = q->stat_flows_plimit;
+	st.pkts_too_long	  = q->stat_pkts_too_long;
+	st.allocation_errors	  = q->stat_allocation_errors;
+	st.time_next_delayed_flow = q->time_next_delayed_flow - ktime_get_ns();
+	st.flows		  = q->flows;
+	st.inactive_flows	  = q->inactive_flows;
+	st.throttled_flows	  = q->throttled_flows;
+	st.pad			  = 0;
+
+	sch_tree_unlock(sch);
 
 	return gnet_stats_copy_app(d, &st, sizeof(st));
 }
