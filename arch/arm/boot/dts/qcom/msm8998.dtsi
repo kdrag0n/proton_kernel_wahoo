@@ -25,6 +25,7 @@
 		serial0 = &uartblsp2dm1;
 		pci-domain0 = &pcie0;
 		sdhc2 = &sdhc_2; /* SDC2 SD card slot */
+		display0 = &framebuffer0;
 	};
 
 	psci {
@@ -33,8 +34,29 @@
 	};
 
 	chosen {
-		stdout-path = "serial0";
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		stdout-path = "display0";
 		bootargs = "rcupdate.rcu_expedited=1";
+
+		/* hack: use framebuffer setup by bootloader.
+		 * the address is taken from the bootloader config (strings xbl.img | grep "Display Reserved")
+		 * it's wrong (it's closer to 0x9d500000, so the top is cut off), but I spent an hour
+		 * trying to find the right address and give up. It's just a temp hack anyways.
+		 */
+		framebuffer0: framebuffer@9d400000 {
+			compatible = "simple-framebuffer";
+			//reg = <0 0x9d400000 0 0xfd2000>;
+			//02400000
+			reg = <0x0 0x9d600000 0x0 0x02400000>;
+			width = <1440>;
+			height = <2880>;
+			stride = <(1440 * 4)>;
+			format = "a8r8g8b8";
+			status = "okay";
+		};
 	};
 
 	cpus {
@@ -439,9 +461,19 @@
 			linux,cma-default;
 		};
 
+		/*
 		cont_splash_mem: splash_region@9d600000 {
 			reg = <0x0 0x9d600000 0x0 0x02400000>;
 			label = "cont_splash_mem";
+		};*/
+
+		//reg = <0 0x9d400000 0 0xfd2000>;
+		/* hack: bootloader framebuffer */
+		bootloader_framebuffer_mem: bootloader_framebuffer_region@a1a10000 {
+			compatible = "removed-dma-pool";
+			no-map;
+			reg = <0x0 0x9d600000 0x0 0x02400000>;
+			//reg = <0 0x9d400000 0 0xfd2000>;
 		};
 	};
 };

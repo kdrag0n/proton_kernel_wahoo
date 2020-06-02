@@ -262,7 +262,7 @@
 			cell-index = <0>;
 			compatible = "qcom,mdss-fb";
 			qcom,cont-splash-memory {
-				linux,contiguous-region = <&cont_splash_mem>;
+				//linux,contiguous-region = <&cont_splash_mem>;
 			};
 		};
 
