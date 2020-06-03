@@ -34,9 +34,6 @@
 #include <linux/slab.h>
 #include <linux/compiler.h>
 #include <linux/pstore_ram.h>
-#include <linux/of.h>
-#include <linux/of_address.h>
-#include <linux/htc_debug_tools.h>
 
 #define RAMOOPS_KERNMSG_HDR "===="
 #define MIN_MEM_SIZE 4096UL
@@ -234,7 +231,7 @@ static ssize_t ramoops_pstore_read(u64 *id, enum pstore_type_id *type,
 	/* ECC correction notice */
 	ecc_notice_size = persistent_ram_ecc_string(prz, NULL, 0);
 
-	*buf = vmalloc(size + ecc_notice_size + 1);
+	*buf = kmalloc(size + ecc_notice_size + 1, GFP_KERNEL);
 	if (*buf == NULL)
 		return -ENOMEM;
 
@@ -343,24 +340,6 @@ static int notrace ramoops_pstore_write_buf(enum pstore_type_id type,
 	return 0;
 }
 
-static int notrace ramoops_pstore_write_buf_user(enum pstore_type_id type,
-						 enum kmsg_dump_reason reason,
-						 u64 *id, unsigned int part,
-						 const char __user *buf,
-						 bool compressed, size_t size,
-						 struct pstore_info *psi)
-{
-	if (type == PSTORE_TYPE_PMSG) {
-		struct ramoops_context *cxt = psi->data;
-
-		if (!cxt->mprz)
-			return -ENOMEM;
-		return persistent_ram_write_user(cxt->mprz, buf, size);
-	}
-
-	return -EINVAL;
-}
-
 static int ramoops_pstore_erase(enum pstore_type_id type, u64 id, int count,
 				struct timespec time, struct pstore_info *psi)
 {
@@ -399,7 +378,6 @@ static struct ramoops_context oops_cxt = {
 		.open	= ramoops_pstore_open,
 		.read	= ramoops_pstore_read,
 		.write_buf	= ramoops_pstore_write_buf,
-		.write_buf_user	= ramoops_pstore_write_buf_user,
 		.erase	= ramoops_pstore_erase,
 	},
 };
@@ -483,8 +461,8 @@ static int ramoops_init_prz(struct device *dev, struct ramoops_context *cxt,
 		return -ENOMEM;
 	}
 
-	*prz = persistent_ram_new(*paddr, sz, sig, &cxt->ecc_info, cxt->memtype,
-				  0);
+	*prz = persistent_ram_new(*paddr, sz, sig, &cxt->ecc_info,
+				  cxt->memtype, 0);
 	if (IS_ERR(*prz)) {
 		int err = PTR_ERR(*prz);
 
@@ -500,97 +478,6 @@ static int ramoops_init_prz(struct device *dev, struct ramoops_context *cxt,
 	return 0;
 }
 
-void notrace ramoops_console_write_buf(const char *buf, size_t size)
-{
-	struct ramoops_context *cxt = &oops_cxt;
-	persistent_ram_write(cxt->cprz, buf, size);
-}
-
-static int ramoops_parse_dt_size(struct platform_device *pdev,
-		const char *propname, unsigned long *val)
-{
-	u64 val64;
-	int ret;
-
-	ret = of_property_read_u64(pdev->dev.of_node, propname, &val64);
-	if (ret == -EINVAL) {
-		*val = 0;
-		return 0;
-	} else if (ret != 0) {
-		dev_err(&pdev->dev, "failed to parse property %s: %d\n",
-				propname, ret);
-		return ret;
-	}
-
-	if (val64 > ULONG_MAX) {
-		dev_err(&pdev->dev, "invalid %s %llu\n", propname, val64);
-		return -EOVERFLOW;
-	}
-
-	*val = val64;
-	return 0;
-}
-
-static int ramoops_parse_dt(struct platform_device *pdev,
-		struct ramoops_platform_data *pdata)
-{
-	struct device_node *of_node = pdev->dev.of_node;
-	struct device_node *mem_region;
-	struct resource res;
-	u32 ecc_size;
-	int ret;
-
-	dev_dbg(&pdev->dev, "using Device Tree\n");
-
-	mem_region = of_parse_phandle(of_node, "memory-region", 0);
-	if (!mem_region) {
-		dev_err(&pdev->dev, "no memory-region phandle\n");
-		return -ENODEV;
-	}
-
-	ret = of_address_to_resource(mem_region, 0, &res);
-	of_node_put(mem_region);
-	if (ret) {
-		dev_err(&pdev->dev, "failed to translate memory-region to resource: %d\n",
-				ret);
-		return ret;
-	}
-
-	pdata->mem_size = resource_size(&res);
-	pdata->mem_address = res.start;
-	pdata->mem_type = of_property_read_bool(of_node, "unbuffered");
-	pdata->dump_oops = !of_property_read_bool(of_node, "no-dump-oops");
-
-	ret = ramoops_parse_dt_size(pdev, "record-size", &pdata->record_size);
-	if (ret < 0)
-		return ret;
-
-	ret = ramoops_parse_dt_size(pdev, "console-size", &pdata->console_size);
-	if (ret < 0)
-		return ret;
-
-	ret = ramoops_parse_dt_size(pdev, "ftrace-size", &pdata->ftrace_size);
-	if (ret < 0)
-		return ret;
-
-	ret = ramoops_parse_dt_size(pdev, "pmsg-size", &pdata->pmsg_size);
-	if (ret < 0)
-		return ret;
-
-	ret = of_property_read_u32(of_node, "ecc-size", &ecc_size);
-	if (ret == 0) {
-		if (ecc_size > INT_MAX) {
-			dev_err(&pdev->dev, "invalid ecc-size %u\n", ecc_size);
-			return -EOVERFLOW;
-		}
-		pdata->ecc_info.ecc_size = ecc_size;
-	} else if (ret != -EINVAL) {
-		return ret;
-	}
-
-	return 0;
-}
-
 static int ramoops_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -599,18 +486,6 @@ static int ramoops_probe(struct platform_device *pdev)
 	size_t dump_mem_sz;
 	phys_addr_t paddr;
 	int err = -EINVAL;
-
-	if (dev->of_node && !pdata) {
-		pdata = devm_kzalloc(&pdev->dev, sizeof(*pdata), GFP_KERNEL);
-		if (!pdata) {
-			err = -ENOMEM;
-			goto fail_out;
-		}
-
-		err = ramoops_parse_dt(pdev, pdata);
-		if (err < 0)
-			goto fail_out;
-	}
 
 	/* Only a single ramoops area allowed at a time, so fail extra
 	 * probes.
@@ -706,9 +581,6 @@ static int ramoops_probe(struct platform_device *pdev)
 		cxt->size, (unsigned long long)cxt->phys_addr,
 		cxt->ecc_info.ecc_size, cxt->ecc_info.block_size);
 
-	if (cxt->console_size)
-		bldr_log_init();
-
 	return 0;
 
 fail_buf:
@@ -743,17 +615,11 @@ static int ramoops_remove(struct platform_device *pdev)
 	return 0;
 }
 
-static const struct of_device_id dt_match[] = {
-	{ .compatible = "ramoops" },
-	{}
-};
-
 static struct platform_driver ramoops_driver = {
 	.probe		= ramoops_probe,
 	.remove		= ramoops_remove,
 	.driver		= {
-		.name		= "ramoops",
-		.of_match_table	= dt_match,
+		.name	= "ramoops",
 	},
 };
 

@@ -36,8 +36,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/uaccess.h>
-#include <linux/vmalloc.h>
-#include <linux/htc_debug_tools.h>
+#include <linux/syslog.h>
 
 #include "internal.h"
 
@@ -122,19 +121,27 @@ static const struct seq_operations pstore_ftrace_seq_ops = {
 	.show	= pstore_ftrace_seq_show,
 };
 
+static int pstore_check_syslog_permissions(struct pstore_private *ps)
+{
+	switch (ps->type) {
+	case PSTORE_TYPE_DMESG:
+	case PSTORE_TYPE_CONSOLE:
+		return check_syslog_permissions(SYSLOG_ACTION_READ_ALL,
+			SYSLOG_FROM_READER);
+	default:
+		return 0;
+	}
+}
+
 static ssize_t pstore_file_read(struct file *file, char __user *userbuf,
 						size_t count, loff_t *ppos)
 {
 	struct seq_file *sf = file->private_data;
 	struct pstore_private *ps = sf->private;
-	ssize_t len = 0;
 
 	if (ps->type == PSTORE_TYPE_FTRACE)
 		return seq_read(file, userbuf, count, ppos);
-	if (ps->type == PSTORE_TYPE_CONSOLE)
-		len = bldr_log_read(ps->data, ps->size, userbuf, count, ppos);
-	return (len > 0) ? len : simple_read_from_buffer(userbuf,
-		count, ppos, ps->data, ps->size);
+	return simple_read_from_buffer(userbuf, count, ppos, ps->data, ps->size);
 }
 
 static int pstore_file_open(struct inode *inode, struct file *file)
@@ -143,6 +150,10 @@ static int pstore_file_open(struct inode *inode, struct file *file)
 	struct seq_file *sf;
 	int err;
 	const struct seq_operations *sops = NULL;
+
+	err = pstore_check_syslog_permissions(ps);
+	if (err)
+		return err;
 
 	if (ps->type == PSTORE_TYPE_FTRACE)
 		sops = &pstore_ftrace_seq_ops;
@@ -180,6 +191,11 @@ static const struct file_operations pstore_file_operations = {
 static int pstore_unlink(struct inode *dir, struct dentry *dentry)
 {
 	struct pstore_private *p = d_inode(dentry)->i_private;
+	int err;
+
+	err = pstore_check_syslog_permissions(p);
+	if (err)
+		return err;
 
 	if (p->psi->erase)
 		p->psi->erase(p->type, p->id, p->count,
@@ -200,7 +216,7 @@ static void pstore_evict_inode(struct inode *inode)
 		spin_lock_irqsave(&allpstore_lock, flags);
 		list_del(&p->list);
 		spin_unlock_irqrestore(&allpstore_lock, flags);
-		vfree(p);
+		kfree(p);
 	}
 }
 
@@ -312,7 +328,7 @@ int pstore_mkfile(enum pstore_type_id type, char *psname, u64 id, int count,
 		goto fail;
 	inode->i_mode = S_IFREG | 0444;
 	inode->i_fop = &pstore_file_operations;
-	private = vmalloc(sizeof *private + size);
+	private = kmalloc(sizeof *private + size, GFP_KERNEL);
 	if (!private)
 		goto fail_alloc;
 	private->type = type;
@@ -326,10 +342,10 @@ int pstore_mkfile(enum pstore_type_id type, char *psname, u64 id, int count,
 			  psname, id, compressed ? ".enc.z" : "");
 		break;
 	case PSTORE_TYPE_CONSOLE:
-		scnprintf(name, sizeof(name), "console-%s", psname);
+		scnprintf(name, sizeof(name), "console-%s-%lld", psname, id);
 		break;
 	case PSTORE_TYPE_FTRACE:
-		scnprintf(name, sizeof(name), "ftrace-%s", psname);
+		scnprintf(name, sizeof(name), "ftrace-%s-%lld", psname, id);
 		break;
 	case PSTORE_TYPE_MCE:
 		scnprintf(name, sizeof(name), "mce-%s-%lld", psname, id);
@@ -369,9 +385,6 @@ int pstore_mkfile(enum pstore_type_id type, char *psname, u64 id, int count,
 	memcpy(private->data, data, size);
 	inode->i_size = private->size = size;
 
-	if (type == PSTORE_TYPE_CONSOLE)
-		inode->i_size += bldr_log_total_size();
-
 	inode->i_private = private;
 
 	if (time.tv_sec)
@@ -389,7 +402,7 @@ int pstore_mkfile(enum pstore_type_id type, char *psname, u64 id, int count,
 
 fail_lockedalloc:
 	mutex_unlock(&d_inode(root)->i_mutex);
-	vfree(private);
+	kfree(private);
 fail_alloc:
 	iput(inode);
 
@@ -416,7 +429,7 @@ static int pstore_fill_super(struct super_block *sb, void *data, int silent)
 
 	inode = pstore_get_inode(sb);
 	if (inode) {
-		inode->i_mode = S_IFDIR | 0750;
+		inode->i_mode = S_IFDIR | 0755;
 		inode->i_op = &pstore_dir_inode_operations;
 		inode->i_fop = &simple_dir_operations;
 		inc_nlink(inode);

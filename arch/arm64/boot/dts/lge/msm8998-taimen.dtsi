@@ -33,7 +33,7 @@
 	ramoops_mem: ramoops_region@b0000000 {
 		compatible = "removed-dma-pool";
 		no-map;
-		reg = <0 0xb0000000 0 0x200000>;
+		reg = <0 0xb0e00000 0 0x200000>;
 	};
 
 	crash_fb_mem@b0200000 {
