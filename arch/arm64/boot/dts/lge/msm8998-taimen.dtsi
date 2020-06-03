@@ -30,22 +30,10 @@
 #include "msm8998-taimen-usb.dtsi"
 
 &reserved_memory {
-	alt_ramoops_mem: alt_ramoops_region@b0e00000 {
-		compatible = "removed-dma-pool";
-		no-map;
-		reg = <0 0xb0e00000 0 0x200000>;
-	};
-
 	ramoops_mem: ramoops_region@b0000000 {
 		compatible = "removed-dma-pool";
 		no-map;
 		reg = <0 0xb0000000 0 0x200000>;
-	};
-
-	ramoops_meta_mem: ramoops_meta_region@affff000 {
-		compatible = "removed-dma-pool";
-		no-map;
-		reg = <0 0xaffff000 0 0x1000>;
 	};
 
 	crash_fb_mem@b0200000 {
@@ -96,22 +84,9 @@
 		qcom,bark-time = <16000>;
 	};
 
-	access_ramoops@0 {
-		compatible = "access_ramoops";
-		label = "metadata";
-		memory-region = <&ramoops_meta_mem>;
-	};
-
-	access_ramoops@1 {
-		compatible = "access_ramoops";
-		label = "ramoops";
-		memory-region = <&alt_ramoops_mem>;
-	};
-
 	ramoops {
 		compatible = "ramoops";
 		memory-region = <&ramoops_mem>;
-		alt-memory-region = <&alt_ramoops_mem>;
 		record-size = <0x0 0x20000>;
 		console-size = <0x0 0x100000>;
 		pmsg-size = <0x0 0x80000>;
