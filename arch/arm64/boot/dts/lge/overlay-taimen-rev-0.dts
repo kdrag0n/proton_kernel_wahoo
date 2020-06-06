@@ -15,6 +15,10 @@
 
 #include "msm8998-taimen.dtsi"
 
+&chosen {
+	qcom,board-id = <2 0>;
+};
+
 &soc {
 	pinctrl@03400000 {
 		pmx_mdss {

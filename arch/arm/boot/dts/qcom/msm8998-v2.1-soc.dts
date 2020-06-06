@@ -24,6 +24,10 @@
 	aliases: aliases {};
 	ramoops: ramoops {};
 	reserved_memory: reserved-memory {};
+	chosen: chosen {
+		qcom,board-id = <0 21>;
+		qcom,msm-id = <292 0x20001>;
+	};
 };
 
 &spkr_i2s_clk_sleep {
