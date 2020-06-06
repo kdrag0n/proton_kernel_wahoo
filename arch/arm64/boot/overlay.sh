@@ -22,10 +22,10 @@ while [[ $# -gt 1 && $1 != FORCE ]]; do
 	for overlay in "$TMPDIR"/overlay-$total.dtbo*; do
 		ufdt_apply_overlay "$TMPDIR/soc.dtb" "$overlay" "$TMPDIR/combined-$total.dtb"
 		overlay_txt="$(dtc-aosp -q -O dts -o - "$overlay")"
-		model="$(sed -n '/^\s*model\s*=\(.*\)$/{s//\1/p;q}' <<<"$overlay_txt")"
-		compatible="$(sed -n '/^\s*compatible\s*=\(.*\)$/{s//\1/p;q}' <<<"$overlay_txt")"
-		board_id="$(sed -n '/^\s*qcom,board-id\s*=\(.*\)$/{s//\1/p;q}' <<<"$overlay_txt")"
 		dtc-aosp -q -O dts -o "$TMPDIR/combined-$total.dts" "$TMPDIR/combined-$total.dtb"
+		model="$(sed -n '/^\s*model\s*=\(.*\)$/{s//\1/p;q}' <"$TMPDIR/combined-$total.dts")"
+		compatible="$(sed -n '/^\s*compatible\s*=\(.*\)$/{s//\1/p;q}' <"$TMPDIR/combined-$total.dts")"
+		board_id="$(sed -n '/^\s*qcom,board-id\s*=\(.*\)$/{s//\1/p;q}' <"$TMPDIR/combined-$total.dts")"
 		sed -i "0,/^\\s*model\\s*=.*/s//model = $model/" "$TMPDIR/combined-$total.dts"
 		sed -i "0,/^\\s*compatible\\s*=.*/s//compatible = $compatible/" "$TMPDIR/combined-$total.dts"
 		sed -i "0,/^\\s*qcom,board-id\\s*=.*/s//qcom,board-id = $board_id/" "$TMPDIR/combined-$total.dts"
