@@ -15,6 +15,10 @@
 
 #include "msm8998-taimen.dtsi"
 
+&chosen {
+	qcom,board-id = <2 1>;
+};
+
 &i2c_5 {
 	status = "ok";
 	ftm4_fts@49 {

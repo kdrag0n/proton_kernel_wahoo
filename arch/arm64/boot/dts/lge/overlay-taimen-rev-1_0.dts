@@ -15,6 +15,10 @@
 
 #include "msm8998-taimen.dtsi"
 
+&chosen {
+	qcom,board-id = <2 6>;
+};
+
 &i2c_5 {
 	status = "ok";
 };

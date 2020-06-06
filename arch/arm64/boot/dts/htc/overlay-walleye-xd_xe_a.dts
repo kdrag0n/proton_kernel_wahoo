@@ -17,3 +17,7 @@
 #include "batterydata-walleye.dtsi"
 #include "msm8998-touch-walleye-xd.dtsi"
 #include "msm8998-htc-led-xd.dtsi"
+
+&chosen {
+	qcom,board-id = <1 1>;
+};
