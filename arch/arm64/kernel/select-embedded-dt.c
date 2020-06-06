@@ -108,7 +108,7 @@ void __init select_embedded_dt(void *bl_dt)
 	if (!bl_dt)
 		return;
 
-	root_node = fdt_path_offset(bl_dt, "/");
+	root_node = fdt_path_offset(bl_dt, "/chosen");
 	prop_val = fdt_getprop(bl_dt, root_node, board_id_prop, NULL);
 	if (!prop_val) {
 		pr_crit("Error: %s missing", board_id_prop);
@@ -126,7 +126,7 @@ void __init select_embedded_dt(void *bl_dt)
 	for (i = 0; dtb_embedded[i]; i++) {
 		void *curr_dt = dtb_embedded[i];
 
-		root_node = fdt_path_offset(curr_dt, "/");
+		root_node = fdt_path_offset(curr_dt, "/chosen");
 		prop_val = fdt_getprop(curr_dt, root_node, board_id_prop, NULL);
 		if (!prop_val || *prop_val != real_board_id)
 			continue;
