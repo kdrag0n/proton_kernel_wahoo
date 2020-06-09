@@ -761,11 +761,20 @@ static bool __init_or_module initcall_blacklisted(initcall_t fn)
 #endif
 __setup("initcall_blacklist=", initcall_blacklist);
 
+#include <linux/ram_debug.h>
+
 static int __init_or_module do_one_initcall_debug(initcall_t fn)
 {
 	ktime_t calltime, delta, rettime;
 	unsigned long long duration;
 	int ret;
+
+#ifdef WRITE_ENABLED
+	char name_buf[INITCALL_SIZE];
+	memset(name_buf, 0, sizeof(name_buf));
+	snprintf(name_buf, sizeof(name_buf), "%pF", fn);
+	strncpy(dbg_addr(INITCALL_ADDR), name_buf, sizeof(name_buf));
+#endif
 
 	printk(KERN_DEBUG "calling  %pF @ %i\n", fn, task_pid_nr(current));
 	calltime = ktime_get();
@@ -778,6 +787,52 @@ static int __init_or_module do_one_initcall_debug(initcall_t fn)
 
 	return ret;
 }
+
+#ifdef READ_ENABLED
+static int read_debug(void)
+{
+	char name_buf[INITCALL_SIZE];
+	char *last_log_buf;
+
+	memset(name_buf, 0, sizeof(name_buf));
+	strncpy(name_buf, dbg_addr(INITCALL_ADDR), sizeof(name_buf));
+	pr_info("LAST INITCALL: %s\n", name_buf);
+
+	return 0;
+}
+early_initcall(read_debug);
+
+#include <linux/fs.h>
+#include <linux/init.h>
+#include <linux/kernel.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
+
+static int last_kmsg_proc_show(struct seq_file *m, void *v)
+{
+	seq_write(m, dbg_addr(LOG_ADDR), LOG_SIZE);
+	return 0;
+}
+
+static int last_kmsg_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, last_kmsg_proc_show, NULL);
+}
+
+static const struct file_operations last_kmsg_proc_fops = {
+	.open		= last_kmsg_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};
+
+static int __init proc_last_kmsg_init(void)
+{
+	proc_create("last_kmsg", 0, NULL, &last_kmsg_proc_fops);
+	return 0;
+}
+fs_initcall(proc_last_kmsg_init);
+#endif
 
 int __init_or_module do_one_initcall(initcall_t fn)
 {

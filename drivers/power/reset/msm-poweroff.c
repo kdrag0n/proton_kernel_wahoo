@@ -511,11 +511,17 @@ static void deassert_ps_hold(void)
 	__raw_writel(0, msm_ps_hold);
 }
 
+#include <linux/ram_debug.h>
+
 static void do_msm_restart(enum reboot_mode reboot_mode, const char *cmd)
 {
 	pr_notice("Going down for restart now\n");
 
 	msm_restart_prepare(cmd);
+
+#ifdef WRITE_ENABLED
+	memcpy(dbg_addr(LOG_ADDR), log_buf, LOG_SIZE);
+#endif
 
 #ifdef CONFIG_QCOM_DLOAD_MODE
 	/*

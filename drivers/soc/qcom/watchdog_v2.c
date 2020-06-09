@@ -509,11 +509,18 @@ static int msm_watchdog_remove(struct platform_device *pdev)
 	return 0;
 }
 
+#include <linux/ram_debug.h>
+
 void msm_trigger_wdog_bite(void)
 {
 	if (!wdog_data)
 		return;
 	pr_info("Causing a watchdog bite!");
+
+#ifdef WRITE_ENABLED
+	memcpy(dbg_addr(LOG_ADDR), log_buf, LOG_SIZE);
+#endif
+
 	__raw_writel(1, wdog_data->base + WDT0_BITE_TIME);
 	mb();
 	__raw_writel(1, wdog_data->base + WDT0_RST);

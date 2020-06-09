@@ -48,6 +48,11 @@
 		reg = <0 0xaffff000 0 0x1000>;
 	};
 
+	debug_mem: debug_region@c0000000 {
+		compatible = "removed-dma-pool";
+		reg = <0 0xc0000000 0 0x100000>;
+	};
+
 	crash_fb_mem@b0200000 {
 		linux,contiguous-region;
 		reg = <0 0xb0200000 0 0xc00000>;
