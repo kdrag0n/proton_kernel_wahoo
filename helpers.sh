@@ -131,7 +131,7 @@ function zerover() {
 
 # Retrieve the kernel version from a flashable package
 function zver() {
-	unzip -p "$1" Image.gz | gunzip -dc | strings | grep "Linux version [[:digit:]]"
+	unzip -p "$1" Image.lz4-dtb | lz4 -dc | strings | grep "Linux version [[:digit:]]"
 }
 
 
