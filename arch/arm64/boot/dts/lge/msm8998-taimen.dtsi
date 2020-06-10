@@ -48,6 +48,11 @@
 		reg = <0 0xaffff000 0 0x1000>;
 	};
 
+	debug_mem: debug_region@c0000000 {
+		compatible = "removed-dma-pool";
+		reg = <0 0xc0000000 0 0x200000>;
+	};
+
 	crash_fb_mem@b0200000 {
 		linux,contiguous-region;
 		reg = <0 0xb0200000 0 0xc00000>;
@@ -96,22 +101,9 @@
 		qcom,bark-time = <16000>;
 	};
 
-	access_ramoops@0 {
-		compatible = "access_ramoops";
-		label = "metadata";
-		memory-region = <&ramoops_meta_mem>;
-	};
-
-	access_ramoops@1 {
-		compatible = "access_ramoops";
-		label = "ramoops";
-		memory-region = <&alt_ramoops_mem>;
-	};
-
 	ramoops {
 		compatible = "ramoops";
-		memory-region = <&ramoops_mem>;
-		alt-memory-region = <&alt_ramoops_mem>;
+		memory-region = <&debug_mem>;
 		record-size = <0x0 0x20000>;
 		console-size = <0x0 0x100000>;
 		pmsg-size = <0x0 0x80000>;
