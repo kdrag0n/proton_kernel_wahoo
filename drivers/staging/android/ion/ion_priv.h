@@ -23,7 +23,7 @@
 #include <linux/kref.h>
 #include <linux/mm_types.h>
 #include <linux/mutex.h>
-#include <linux/rbtree_latch.h>
+#include <linux/rbtree.h>
 #include <linux/seq_file.h>
 
 #include "msm_ion_priv.h"
@@ -40,8 +40,7 @@
 struct ion_handle {
 	struct ion_buffer *buffer;
 	struct ion_client *client;
-	struct latch_tree_node rnode;
-	struct rcu_head rcu;
+	struct rb_node rnode;
 	atomic_t refcount;
 	int id;
 };
