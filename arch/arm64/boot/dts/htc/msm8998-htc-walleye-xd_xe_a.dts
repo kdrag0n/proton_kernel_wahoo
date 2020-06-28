@@ -11,6 +11,10 @@
  */
 
 /dts-v1/;
-/plugin/;
 
-#include "msm8998-taimen-rev-1_0.dtsi"
+#include "../qcom/msm8998-v2.1-soc.dtsi"
+#include "msm8998-htc-walleye-xd_xe_a.dtsi"
+ 
+/ {
+	qcom,board-id = <0x1bc 0x4>;
+};
