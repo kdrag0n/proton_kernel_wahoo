@@ -10,6 +10,30 @@
  * GNU General Public License for more details.
  */
 
-/dts-v1/;
+#include "../qcom/msm8998-v2.1.dtsi"
+/ {
+	compatible = "qcom,msm8998-mtp", "qcom,msm8998", "qcom,mtp";
+	firmware {
+		firmware_android: android {};
+	};
+};
 
-#include "msm8998-v2.1-soc.dtsi"
+/ {
+	aliases: aliases {};
+	ramoops: ramoops {};
+	reserved_memory: reserved-memory {};
+};
+
+&spkr_i2s_clk_sleep {
+	config {
+		/delete-property/ bias-pull-down;
+	};
+};
+
+&soc {
+	/delete-node/ qcom,qbt1000;
+};
+
+&pcie0 {
+	/delete-property/ qcom,l1ss-supported;
+};

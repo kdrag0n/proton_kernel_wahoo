@@ -134,7 +134,9 @@ endif
 
 KBUILD_DTBS	:= dtbs
 
+ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
 KBUILD_DTBO_IMG := dtbo.img
+endif
 
 ifeq ($(CONFIG_BUILD_ARM64_APPLY_DTBO),y)
 	KBUILD_APPLY_DTBO := apply_dtbo
