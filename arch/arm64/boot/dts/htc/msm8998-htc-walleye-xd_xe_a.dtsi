@@ -10,7 +10,7 @@
  * GNU General Public License for more details.
  */
 
-/dts-v1/;
-/plugin/;
-
-#include "msm8998-taimen-rev-1_0.dtsi"
+#include "msm8998-v2.1-htc_mw-common-overlay.dtsi"
+#include "batterydata-walleye.dtsi"
+#include "msm8998-touch-walleye-xd.dtsi"
+#include "msm8998-htc-led-xd.dtsi"
