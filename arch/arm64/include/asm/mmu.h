@@ -47,9 +47,5 @@ extern void create_pgd_mapping(struct mm_struct *mm, phys_addr_t phys,
 			       pgprot_t prot);
 extern void *fixmap_remap_fdt(phys_addr_t dt_phys);
 
-#ifdef CONFIG_BUILD_ARM64_EMBEDDED_DTB
-extern void select_embedded_dt(void *dt_virt) __init;
-#endif
-
 #endif	/* !__ASSEMBLY__ */
 #endif
