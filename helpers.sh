@@ -163,9 +163,6 @@ function mkzip() {
 	# Copy kernel image
 	cp "$kroot/out/arch/$arch/boot/Image.lz4-dtb" "$kroot/flasher/"
 
-	# Copy DTBO
-	cp "$kroot/out/arch/$arch/boot/dtbo.img" "$kroot/flasher/"
-
 	# Generate version banner to be shown during flash
 	echo "  • Installing $build_type build $version" >| "$kroot/flasher/version"
 	echo "  • Built on $(date "+%a %b %d, %Y")" >> "$kroot/flasher/version"
