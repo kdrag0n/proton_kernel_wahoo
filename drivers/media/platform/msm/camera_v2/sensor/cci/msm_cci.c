@@ -47,6 +47,8 @@
 #define CCI_DBG(fmt, args...) pr_debug(fmt, ##args)
 #endif
 
+#define CCI_DUMP_REG 0
+
 /* Max bytes that can be read per CCI read transaction */
 #define CCI_READ_MAX 12
 #define CCI_I2C_READ_MAX_RETRIES 3
@@ -55,8 +57,6 @@
 
 #define PRIORITY_QUEUE (QUEUE_0)
 #define SYNC_QUEUE (QUEUE_1)
-
-struct mutex g_cci_mutex;
 
 static struct v4l2_subdev *g_cci_subdev;
 
@@ -298,6 +298,9 @@ static uint32_t msm_cci_wait(struct cci_device *cci_dev,
 		__func__, __LINE__);
 
 	if (rc <= 0) {
+		if (CCI_DUMP_REG)
+			msm_cci_dump_registers(cci_dev, master, queue);
+
 		pr_err("%s: %d wait for queue: %d\n",
 			 __func__, __LINE__, queue);
 		if (rc == 0)
@@ -327,6 +330,9 @@ static int32_t msm_cci_addr_to_num_bytes(
 		break;
 	case MSM_CAMERA_I2C_3B_ADDR:
 		retVal = 3;
+		break;
+	case MSM_CAMERA_I2C_DWORD_ADDR:
+		retVal = 4;
 		break;
 	default:
 		pr_err("%s: %d failed: %d\n", __func__, __LINE__, addr_type);
@@ -400,6 +406,10 @@ static int32_t msm_cci_calc_cmd_len(struct cci_device *cci_dev,
 			if (cmd->reg_addr + 1 ==
 				(cmd+1)->reg_addr) {
 				len += data_len;
+				if (len > cci_dev->payload_size) {
+					len = len - data_len;
+					break;
+				}
 				*pack += data_len;
 			} else
 				break;
@@ -835,7 +845,7 @@ static int32_t msm_cci_i2c_read(struct v4l2_subdev *sd,
 	if (rc < 0) {
 		pr_err("%s:%d msm_cci_set_clk_param failed rc = %d\n",
 			__func__, __LINE__, rc);
-		goto ERROR;
+		return rc;
 	}
 
 	/*
@@ -929,7 +939,9 @@ static int32_t msm_cci_i2c_read(struct v4l2_subdev *sd,
 	rc = wait_for_completion_timeout(&cci_dev->
 		cci_master_info[master].reset_complete, CCI_TIMEOUT);
 	if (rc <= 0) {
-		msm_cci_dump_registers(cci_dev, master, queue);
+		if (CCI_DUMP_REG)
+			msm_cci_dump_registers(cci_dev, master, queue);
+
 		if (rc == 0)
 			rc = -ETIMEDOUT;
 		pr_err("%s: %d wait_for_completion_timeout rc = %d\n",
@@ -1597,6 +1609,12 @@ static int32_t msm_cci_write(struct v4l2_subdev *sd,
 		return rc;
 	}
 
+	if (cci_dev->cci_state != CCI_STATE_ENABLED) {
+		pr_err("%s invalid cci state %d\n",
+			__func__, cci_dev->cci_state);
+		return -EINVAL;
+	}
+
 	if (c_ctrl->cci_info->cci_i2c_master >= MASTER_MAX
 			|| c_ctrl->cci_info->cci_i2c_master < 0) {
 		pr_err("%s:%d Invalid I2C master addr\n", __func__, __LINE__);
@@ -2120,7 +2138,6 @@ static int msm_cci_probe(struct platform_device *pdev)
 	msm_cci_init_clk_params(new_cci_dev);
 	msm_cci_init_gpio_params(new_cci_dev);
 
-	mutex_init(&g_cci_mutex);
 	rc = msm_camera_get_dt_vreg_data(new_cci_dev->pdev->dev.of_node,
 		&(new_cci_dev->cci_vreg), &(new_cci_dev->regulator_count));
 	if (rc < 0) {

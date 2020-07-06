@@ -156,8 +156,7 @@ static int32_t msm_buf_mngr_buf_done(struct msm_buf_mngr_device *buf_mngr_dev,
 						buf_info->stream_id,
 						buf_info->frame_id,
 						&buf_info->timestamp,
-						buf_info->reserved,
-						VB2_BUF_STATE_DONE);
+						buf_info->reserved);
 			list_del_init(&bufs->entry);
 			kfree(bufs);
 			break;
@@ -167,6 +166,33 @@ static int32_t msm_buf_mngr_buf_done(struct msm_buf_mngr_device *buf_mngr_dev,
 	return ret;
 }
 
+static int32_t msm_buf_mngr_buf_error(struct msm_buf_mngr_device *buf_mngr_dev,
+	struct msm_buf_mngr_info *buf_info)
+{
+	unsigned long flags;
+	struct msm_get_bufs *bufs, *save;
+	int32_t ret = -EINVAL;
+
+	spin_lock_irqsave(&buf_mngr_dev->buf_q_spinlock, flags);
+	list_for_each_entry_safe(bufs, save, &buf_mngr_dev->buf_qhead, entry) {
+		if ((bufs->session_id == buf_info->session_id) &&
+			(bufs->stream_id == buf_info->stream_id) &&
+			(bufs->index == buf_info->index)) {
+			ret = buf_mngr_dev->vb2_ops.buf_error
+					(bufs->vb2_v4l2_buf,
+						buf_info->session_id,
+						buf_info->stream_id,
+						buf_info->frame_id,
+						&buf_info->timestamp,
+						buf_info->reserved);
+			list_del_init(&bufs->entry);
+			kfree(bufs);
+			break;
+		}
+	}
+	spin_unlock_irqrestore(&buf_mngr_dev->buf_q_spinlock, flags);
+	return ret;
+}
 
 static int32_t msm_buf_mngr_put_buf(struct msm_buf_mngr_device *buf_mngr_dev,
 	struct msm_buf_mngr_info *buf_info)
@@ -210,8 +236,7 @@ static int32_t msm_generic_buf_mngr_flush(
 			(bufs->stream_id == buf_info->stream_id)) {
 			ret = buf_mngr_dev->vb2_ops.buf_done(bufs->vb2_v4l2_buf,
 						buf_info->session_id,
-						buf_info->stream_id, 0, &ts, 0,
-						VB2_BUF_STATE_DONE);
+						buf_info->stream_id, 0, &ts, 0);
 			pr_err("Bufs not flushed: str_id = %d buf_index = %d ret = %d\n",
 			buf_info->stream_id, bufs->index,
 			ret);
@@ -475,6 +500,9 @@ int msm_cam_buf_mgr_ops(unsigned int cmd, void *argp)
 	case VIDIOC_MSM_BUF_MNGR_BUF_DONE:
 		rc = msm_buf_mngr_buf_done(msm_buf_mngr_dev, argp);
 		break;
+	case VIDIOC_MSM_BUF_MNGR_BUF_ERROR:
+		rc = msm_buf_mngr_buf_error(msm_buf_mngr_dev, argp);
+		break;
 	case VIDIOC_MSM_BUF_MNGR_PUT_BUF:
 		rc = msm_buf_mngr_put_buf(msm_buf_mngr_dev, argp);
 		break;
@@ -534,27 +562,30 @@ static long msm_buf_mngr_subdev_ioctl(struct v4l2_subdev *sd,
 	}
 	switch (cmd) {
 	case VIDIOC_MSM_BUF_MNGR_IOCTL_CMD: {
-		struct msm_camera_private_ioctl_arg k_ioctl;
-		struct msm_buf_mngr_info buf_info, *tmp = NULL;
+		struct msm_camera_private_ioctl_arg k_ioctl, *ptr;
 
 		if (!arg)
 			return -EINVAL;
-		k_ioctl = *((struct msm_camera_private_ioctl_arg *)arg);
+		ptr = arg;
+		k_ioctl = *ptr;
 		switch (k_ioctl.id) {
 		case MSM_CAMERA_BUF_MNGR_IOCTL_ID_GET_BUF_BY_IDX: {
+			struct msm_buf_mngr_info buf_info, *tmp = NULL;
 
 			if (k_ioctl.size != sizeof(struct msm_buf_mngr_info))
 				return -EINVAL;
 			if (!k_ioctl.ioctl_ptr)
 				return -EINVAL;
-			MSM_CAM_GET_IOCTL_ARG_PTR(&tmp,
-				&k_ioctl.ioctl_ptr, sizeof(tmp));
-			if (copy_from_user(&buf_info,
-				(void __user *)tmp,
-				sizeof(struct msm_buf_mngr_info))) {
-				return -EFAULT;
+			if (!is_compat_task()) {
+				MSM_CAM_GET_IOCTL_ARG_PTR(&tmp,
+					&k_ioctl.ioctl_ptr, sizeof(tmp));
+				if (copy_from_user(&buf_info, tmp,
+					sizeof(struct msm_buf_mngr_info))) {
+					return -EFAULT;
+				}
+				k_ioctl.ioctl_ptr = (uintptr_t)&buf_info;
 			}
-			k_ioctl.ioctl_ptr = (uintptr_t)&buf_info;
+
 			argp = &k_ioctl;
 			rc = msm_cam_buf_mgr_ops(cmd, argp);
 			}
@@ -568,6 +599,7 @@ static long msm_buf_mngr_subdev_ioctl(struct v4l2_subdev *sd,
 	case VIDIOC_MSM_BUF_MNGR_GET_BUF:
 	case VIDIOC_MSM_BUF_MNGR_BUF_DONE:
 	case VIDIOC_MSM_BUF_MNGR_PUT_BUF:
+	case VIDIOC_MSM_BUF_MNGR_BUF_ERROR:
 		rc = msm_cam_buf_mgr_ops(cmd, argp);
 		break;
 	case VIDIOC_MSM_BUF_MNGR_INIT:
@@ -716,6 +748,9 @@ static long msm_bmgr_subdev_fops_compat_ioctl(struct file *file,
 	case VIDIOC_MSM_BUF_MNGR_BUF_DONE32:
 		cmd = VIDIOC_MSM_BUF_MNGR_BUF_DONE;
 		break;
+	case VIDIOC_MSM_BUF_MNGR_BUF_ERROR32:
+		cmd = VIDIOC_MSM_BUF_MNGR_BUF_ERROR;
+		break;
 	case VIDIOC_MSM_BUF_MNGR_PUT_BUF32:
 		cmd = VIDIOC_MSM_BUF_MNGR_PUT_BUF;
 		break;
@@ -734,6 +769,7 @@ static long msm_bmgr_subdev_fops_compat_ioctl(struct file *file,
 	switch (cmd) {
 	case VIDIOC_MSM_BUF_MNGR_GET_BUF:
 	case VIDIOC_MSM_BUF_MNGR_BUF_DONE:
+	case VIDIOC_MSM_BUF_MNGR_BUF_ERROR:
 	case VIDIOC_MSM_BUF_MNGR_FLUSH:
 	case VIDIOC_MSM_BUF_MNGR_PUT_BUF: {
 		struct msm_buf_mngr_info32_t buf_info32;

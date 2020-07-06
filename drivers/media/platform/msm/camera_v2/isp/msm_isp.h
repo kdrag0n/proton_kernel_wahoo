@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -155,9 +155,11 @@ struct msm_vfe_irq_ops {
 		struct msm_isp_timestamp *ts);
 	void (*process_axi_irq)(struct vfe_device *vfe_dev,
 		uint32_t irq_status0, uint32_t irq_status1,
+		uint32_t pingpong_status,
 		struct msm_isp_timestamp *ts);
 	void (*process_stats_irq)(struct vfe_device *vfe_dev,
 		uint32_t irq_status0, uint32_t irq_status1,
+		uint32_t pingpong_status,
 		struct msm_isp_timestamp *ts);
 	void (*config_irq)(struct vfe_device *vfe_dev,
 		uint32_t irq_status0, uint32_t irq_status1,
@@ -414,6 +416,12 @@ enum msm_isp_comp_irq_types {
 
 #define MSM_VFE_REQUESTQ_SIZE 8
 
+struct msm_isp_pending_buf_info {
+	uint32_t is_buf_done_pending;
+	struct msm_isp_buffer *buf;
+	uint32_t frame_id;
+};
+
 struct msm_vfe_axi_stream {
 	uint32_t frame_id;
 	enum msm_vfe_axi_state state;
@@ -456,7 +464,7 @@ struct msm_vfe_axi_stream {
 	uint32_t runtime_output_format;
 	enum msm_stream_rdi_input_type  rdi_input_type;
 	struct msm_isp_sw_framskip sw_skip;
-	uint8_t sw_ping_pong_bit;
+	int8_t sw_ping_pong_bit;
 
 	struct vfe_device *vfe_dev[MAX_VFE];
 	int num_isp;
@@ -469,6 +477,8 @@ struct msm_vfe_axi_stream {
 	 */
 	uint32_t vfe_mask;
 	uint32_t composite_irq[MSM_ISP_COMP_IRQ_MAX];
+	int lpm_mode;
+	struct msm_isp_pending_buf_info pending_buf_info;
 };
 
 struct msm_vfe_axi_composite_info {
@@ -497,6 +507,7 @@ struct msm_vfe_src_info {
 	enum msm_vfe_dual_hw_type dual_hw_type;
 	struct msm_vfe_dual_hw_ms_info dual_hw_ms_info;
 	bool accept_frame;
+	uint32_t lpm;
 };
 
 struct msm_vfe_fetch_engine_info {
@@ -594,12 +605,13 @@ struct msm_vfe_tasklet_queue_cmd {
 	struct list_head list;
 	uint32_t vfeInterruptStatus0;
 	uint32_t vfeInterruptStatus1;
+	uint32_t vfe_pingpong_status;
 	struct msm_isp_timestamp ts;
 	uint8_t cmd_used;
 	struct vfe_device *vfe_dev;
 };
 
-#define MSM_VFE_TASKLETQ_SIZE 200
+#define MSM_VFE_TASKLETQ_SIZE 400
 
 enum msm_vfe_overflow_state {
 	NO_OVERFLOW,
@@ -737,6 +749,7 @@ struct msm_vfe_common_dev_data {
 	struct msm_vfe_axi_stream streams[VFE_AXI_SRC_MAX * MAX_VFE];
 	struct msm_vfe_stats_stream stats_streams[MSM_ISP_STATS_MAX * MAX_VFE];
 	struct mutex vfe_common_mutex;
+	uint8_t pd_buf_idx;
 	/* Irq debug Info */
 	struct msm_vfe_irq_dump vfe_irq_dump;
 	struct msm_vfe_tasklet tasklets[MAX_VFE + 1];
@@ -783,7 +796,9 @@ struct vfe_device {
 	size_t num_norm_clk;
 	bool hvx_clk_state;
 	enum cam_ahb_clk_vote ahb_vote;
+	enum cam_ahb_clk_vote user_requested_ahb_vote;
 	struct cx_ipeak_client *vfe_cx_ipeak;
+	int cx_ipeak_bit;
 
 	/* Sync variables*/
 	struct completion reset_complete;
@@ -792,6 +807,8 @@ struct vfe_device {
 	struct mutex core_mutex;
 	spinlock_t shared_data_lock;
 	spinlock_t reg_update_lock;
+	spinlock_t reset_completion_lock;
+	spinlock_t halt_completion_lock;
 
 	/* Tasklet info */
 	atomic_t irq_cnt;
@@ -835,10 +852,12 @@ struct vfe_device {
 	uint32_t bus_err_ign_mask;
 	uint32_t recovery_irq0_mask;
 	uint32_t recovery_irq1_mask;
-	/* Store the buf_idx for pd stats RDI stream */
-	uint8_t pd_buf_idx;
 	/* total bandwidth per vfe */
 	uint64_t total_bandwidth;
+	struct isp_kstate *isp_page;
+
+	/* irq info */
+	uint32_t irq_sof_id;
 };
 
 struct vfe_parent_device {
