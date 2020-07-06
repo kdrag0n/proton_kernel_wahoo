@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -26,7 +26,6 @@
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-device.h>
 #include <media/videobuf2-core.h>
-#include <media/msmb_generic_buf_mgr.h>
 
 #include "msm.h"
 #include "msm_buf_mgr.h"
@@ -739,7 +738,8 @@ static int msm_isp_buf_divert(struct msm_isp_buf_mgr *buf_mgr,
 
 static int msm_isp_buf_done(struct msm_isp_buf_mgr *buf_mgr,
 	uint32_t bufq_handle, uint32_t buf_index,
-	struct timeval *tv, uint32_t frame_id, uint32_t output_format)
+	struct timeval *tv, uint32_t frame_id, uint32_t output_format,
+	enum vb2_buffer_state vb_buffer_state)
 {
 	int rc = 0;
 	unsigned long flags;
@@ -768,7 +768,7 @@ static int msm_isp_buf_done(struct msm_isp_buf_mgr *buf_mgr,
 			spin_unlock_irqrestore(&bufq->bufq_lock, flags);
 			buf_mgr->vb2_ops->buf_done(buf_info->vb2_v4l2_buf,
 				bufq->session_id, bufq->stream_id,
-				frame_id, tv, output_format);
+				frame_id, tv, output_format, vb_buffer_state);
 		} else {
 			spin_unlock_irqrestore(&bufq->bufq_lock, flags);
 		}
@@ -889,7 +889,8 @@ static int msm_isp_buf_enqueue(struct msm_isp_buf_mgr *buf_mgr,
 				buf_info->buf_debug.put_state_last ^= 1;
 				rc = msm_isp_buf_done(buf_mgr,
 					info->handle, info->buf_idx,
-					buf_info->tv, buf_info->frame_id, 0);
+					buf_info->tv, buf_info->frame_id, 0,
+					VB2_BUF_STATE_DONE);
 			}
 		}
 	} else {
@@ -1167,15 +1168,10 @@ int msm_isp_smmu_attach(struct msm_isp_buf_mgr *buf_mgr,
 {
 	struct msm_vfe_smmu_attach_cmd *cmd = arg;
 	int rc = 0;
-	int32_t stall_disable = 1;
 
 	pr_debug("%s: cmd->security_mode : %d\n", __func__, cmd->security_mode);
-
 	mutex_lock(&buf_mgr->lock);
 	if (cmd->iommu_attach_mode == IOMMU_ATTACH) {
-		/* disable smmu stall on fault */
-		cam_smmu_set_attr(buf_mgr->iommu_hdl,
-			DOMAIN_ATTR_CB_STALL_DISABLE, &stall_disable);
 		/*
 		 * Call hypervisor thru scm call to notify secure or
 		 * non-secure mode

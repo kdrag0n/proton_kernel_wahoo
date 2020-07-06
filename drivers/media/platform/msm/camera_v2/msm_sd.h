@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, 2018 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -14,6 +14,7 @@
 #define _MSM_SD_H
 
 #include <media/v4l2-subdev.h>
+#include <media/videobuf2-core.h>
 #include <media/msmb_camera.h>
 
 /* NOTE: this header file should ONLY be included by subdev drivers */
@@ -79,11 +80,8 @@ struct msm_sd_req_vb2_q {
 		unsigned int stream_id);
 	int (*buf_done)(struct vb2_v4l2_buffer *vb2_v4l2_buf, int session_id,
 		unsigned int stream_id, uint32_t sequence, struct timeval *ts,
-		uint32_t reserved);
+		uint32_t reserved, enum vb2_buffer_state state);
 	int (*flush_buf)(int session_id, unsigned int stream_id);
-	int (*buf_error)(struct vb2_v4l2_buffer *vb2_v4l2_buf, int session_id,
-		unsigned int stream_id, uint32_t sequence, struct timeval *ts,
-		uint32_t reserved);
 };
 
 #define MSM_SD_NOTIFY_GET_SD 0x00000001

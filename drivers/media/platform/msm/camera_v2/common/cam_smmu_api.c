@@ -24,10 +24,9 @@
 #include <linux/dma-mapping.h>
 #include <linux/msm_dma_iommu_mapping.h>
 #include <linux/workqueue.h>
-#include <linux/sizes.h>
 #include <soc/qcom/scm.h>
 #include <soc/qcom/secure_buffer.h>
-#include <msm_camera_tz_util.h>
+#include "msm_camera_tz_util.h"
 #include "cam_smmu_api.h"
 
 #define SCRATCH_ALLOC_START SZ_128K
@@ -892,13 +891,6 @@ static int cam_smmu_detach_device(int idx)
 {
 	struct cam_context_bank_info *cb = &iommu_cb_set.cb_info[idx];
 
-	if (!list_empty_careful(&iommu_cb_set.cb_info[idx].smmu_buf_list)) {
-		pr_err("Client %s buffer list is not clean!\n",
-			iommu_cb_set.cb_info[idx].name);
-		cam_smmu_print_list(idx);
-		cam_smmu_clean_buffer_list(idx);
-	}
-
 	/* detach the mapping to device */
 	arm_iommu_detach_device(cb->dev);
 	iommu_cb_set.cb_info[idx].state = CAM_SMMU_DETACH;
@@ -1349,8 +1341,8 @@ int cam_smmu_set_attr(int handle, uint32_t flags, int32_t *data)
 	if (iommu_cb_set.cb_info[idx].handle != handle) {
 		pr_err("Error: hdl is not valid, table_hdl = %x, hdl = %x\n",
 			iommu_cb_set.cb_info[idx].handle, handle);
-		mutex_unlock(&iommu_cb_set.cb_info[idx].lock);
-		return -EINVAL;
+		ret = -EINVAL;
+		goto err_smmu_set_attr;
 	}
 
 	if (iommu_cb_set.cb_info[idx].state == CAM_SMMU_DETACH) {
@@ -1360,13 +1352,16 @@ int cam_smmu_set_attr(int handle, uint32_t flags, int32_t *data)
 		/* set attributes */
 		ret = iommu_domain_set_attr(domain, cb->attr, (void *)data);
 		if (ret < 0) {
-			mutex_unlock(&iommu_cb_set.cb_info[idx].lock);
 			pr_err("Error: set attr\n");
-			return -ENODEV;
+			ret = -ENODEV;
+			goto err_smmu_set_attr;
 		}
 	} else {
 		ret = -EINVAL;
+		goto err_smmu_set_attr;
 	}
+
+err_smmu_set_attr:
 	mutex_unlock(&iommu_cb_set.cb_info[idx].lock);
 	return ret;
 }
@@ -2294,7 +2289,7 @@ static int cam_smmu_setup_cb(struct cam_context_bank_info *cb,
 		}
 	} else {
 		cb->va_start = SZ_128K;
-		cb->va_len = VA_SPACE_END - SZ_128M;
+		cb->va_len = VA_SPACE_END - SZ_128K;
 	}
 
 	/* create a virtual mapping */

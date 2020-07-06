@@ -41,7 +41,6 @@ struct msm_camera_sensor_slave_info32 {
 	uint8_t  is_init_params_valid;
 	struct msm_sensor_init_params sensor_init_params;
 	enum msm_sensor_output_format_t output_format;
-	uint8_t bypass_video_node_creation;
 };
 
 struct msm_camera_csid_lut_params32 {
@@ -82,15 +81,6 @@ struct msm_ir_led_cfg_data_t32 {
 
 struct msm_ir_cut_cfg_data_t32 {
 	enum msm_ir_cut_cfg_type_t cfg_type;
-};
-
-struct msm_laser_led_cfg_data_t32 {
-	enum msm_laser_led_cfg_type_t cfg_type;
-	compat_uptr_t                 setting;
-	compat_uptr_t                 debug_reg;
-	uint32_t                      debug_reg_size;
-	uint16_t                      i2c_addr;
-	enum i2c_freq_mode_t          i2c_freq_mode;
 };
 
 struct eeprom_read_t32 {
@@ -230,11 +220,35 @@ struct msm_ois_set_info_t32 {
 	struct msm_ois_params_t32 ois_params;
 };
 
+struct ois_position_32 {
+	uint8_t data0;
+	uint8_t data1;
+	uint8_t data2;
+	uint8_t data3;
+	uint8_t data4;
+	uint8_t data5;
+	uint8_t data6;
+	uint8_t data7;
+};
+
+struct msm_ois_readout32 {
+	int16_t ois_x_shift;
+	int16_t ois_y_shift;
+	int64_t readout_time;
+};
+
+struct ois_gyro32 {
+	uint8_t query_size;
+	compat_uptr_t gyro_data;
+};
+
 struct msm_ois_cfg_data32 {
 	int cfgtype;
+	struct ois_position_32 pos;
 	union {
 		struct msm_ois_set_info_t32 set_info;
 		compat_uptr_t settings;
+		struct ois_gyro32 gyro;
 	} cfg;
 };
 
@@ -285,10 +299,6 @@ struct msm_flash_cfg_data_t32 {
 
 #define VIDIOC_MSM_IR_CUT_CFG32 \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 15, struct msm_ir_cut_cfg_data_t32)
-
-#define VIDIOC_MSM_LASER_LED_CFG32 \
-	_IOWR('V', BASE_VIDIOC_PRIVATE + 16, struct msm_laser_led_cfg_data_t32)
-
 #endif
 
 #endif

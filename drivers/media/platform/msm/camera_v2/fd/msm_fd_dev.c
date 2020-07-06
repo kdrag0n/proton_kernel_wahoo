@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -1376,7 +1376,9 @@ static int fd_probe(struct platform_device *pdev)
 	}
 	fd->hw_revision = msm_fd_hw_get_revision(fd);
 
+	/* Reset HW and don't wait for complete in probe */
 	msm_fd_hw_put(fd);
+	fd->init = true;
 
 	ret = msm_fd_hw_request_irq(pdev, fd, msm_fd_wq_handler);
 	if (ret < 0) {
@@ -1471,7 +1473,6 @@ static struct platform_driver fd_driver = {
 		.name = MSM_FD_DRV_NAME,
 		.owner = THIS_MODULE,
 		.of_match_table = msm_fd_dt_match,
-		.suppress_bind_attrs = true,
 	},
 };
 
