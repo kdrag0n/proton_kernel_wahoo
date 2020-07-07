@@ -1,5 +1,4 @@
-/* Copyright (c) 2011-2014, 2017, 2019 The Linux Foundataion.
- * All rights reserved.
+/* Copyright (c) 2011-2014, The Linux Foundataion. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -176,45 +175,35 @@ int32_t msm_camera_io_poll_value_wmask(void __iomem *addr, u32 wait_data,
 
 void msm_camera_io_dump(void __iomem *addr, int size, int enable)
 {
-	char line_str[128];
+	char line_str[128], *p_str;
 	int i;
-	ptrdiff_t p = 0;
-	size_t offset = 0, used = 0;
+	u32 *p = (u32 *) addr;
 	u32 data;
 
 	CDBG("%s: addr=%pK size=%d\n", __func__, addr, size);
 
-	if (!addr || (size <= 0) || !enable)
+	if (!p || (size <= 0) || !enable)
 		return;
 
 	line_str[0] = '\0';
+	p_str = line_str;
 	for (i = 0; i < size/4; i++) {
 		if (i % 4 == 0) {
-			used = snprintf(line_str + offset,
-				sizeof(line_str) - offset, "0x%04tX: ", p);
-			if (offset + used >= sizeof(line_str)) {
-				pr_err("%s\n", line_str);
-				offset = 0;
-				line_str[0] = '\0';
-			} else {
-				offset += used;
-			}
+#ifdef CONFIG_COMPAT
+			snprintf(p_str, 20, "%016lx: ", (unsigned long) p);
+			p_str += 18;
+#else
+			snprintf(p_str, 12, "%08lx: ", (unsigned long) p);
+			p_str += 10;
+#endif
 		}
-		data = readl_relaxed(addr + p);
-		p = p + 4;
-		used = snprintf(line_str + offset,
-			sizeof(line_str) - offset, "%08x ", data);
-		if (offset + used >= sizeof(line_str)) {
-			pr_err("%s\n", line_str);
-			offset = 0;
-			line_str[0] = '\0';
-		} else {
-			offset += used;
-		}
+		data = readl_relaxed(p++);
+		snprintf(p_str, 12, "%08x ", data);
+		p_str += 9;
 		if ((i + 1) % 4 == 0) {
 			pr_err("%s\n", line_str);
 			line_str[0] = '\0';
-			offset = 0;
+			p_str = line_str;
 		}
 	}
 	if (line_str[0] != '\0')
@@ -365,13 +354,12 @@ int msm_cam_clk_enable(struct device *dev, struct msm_cam_clk_info *clk_info,
 		}
 	} else {
 		for (i = num_clk - 1; i >= 0; i--) {
-			if (!IS_ERR_OR_NULL(clk_ptr[i])) {
+			if (clk_ptr[i] != NULL) {
 				CDBG("%s disable %s\n", __func__,
 					clk_info[i].clk_name);
 				clk_disable(clk_ptr[i]);
 				clk_unprepare(clk_ptr[i]);
 				clk_put(clk_ptr[i]);
-				clk_ptr[i] = NULL;
 			}
 		}
 	}
@@ -385,11 +373,10 @@ cam_clk_set_err:
 	clk_put(clk_ptr[i]);
 cam_clk_get_err:
 	for (i--; i >= 0; i--) {
-		if (!IS_ERR_OR_NULL(clk_ptr[i])) {
+		if (clk_ptr[i] != NULL) {
 			clk_disable(clk_ptr[i]);
 			clk_unprepare(clk_ptr[i]);
 			clk_put(clk_ptr[i]);
-			clk_ptr[i] = NULL;
 		}
 	}
 	return rc;
@@ -427,7 +414,7 @@ int msm_camera_config_vreg(struct device *dev, struct camera_vreg_t *cam_vreg,
 			curr_vreg = &cam_vreg[j];
 			reg_ptr[j] = regulator_get(dev,
 				curr_vreg->reg_name);
-			if (IS_ERR_OR_NULL(reg_ptr[j])) {
+			if (IS_ERR(reg_ptr[j])) {
 				pr_err("%s: %s get failed\n",
 					 __func__,
 					 curr_vreg->reg_name);
@@ -534,7 +521,7 @@ int msm_camera_enable_vreg(struct device *dev, struct camera_vreg_t *cam_vreg,
 					continue;
 			} else
 				j = i;
-			if (IS_ERR_OR_NULL(reg_ptr[j])) {
+			if (IS_ERR(reg_ptr[j])) {
 				pr_err("%s: %s null regulator\n",
 					__func__, cam_vreg[j].reg_name);
 				goto disable_vreg;
@@ -559,16 +546,12 @@ int msm_camera_enable_vreg(struct device *dev, struct camera_vreg_t *cam_vreg,
 					continue;
 			} else
 				j = i;
-			if (reg_ptr[j]) {
-				regulator_disable(reg_ptr[j]);
-				if (cam_vreg[j].delay > 20)
-					msleep(cam_vreg[j].delay);
-				else if (cam_vreg[j].delay)
-					usleep_range(
-						cam_vreg[j].delay * 1000,
-						(cam_vreg[j].delay * 1000)
-						+ 1000);
-			}
+			regulator_disable(reg_ptr[j]);
+			if (cam_vreg[j].delay > 20)
+				msleep(cam_vreg[j].delay);
+			else if (cam_vreg[j].delay)
+				usleep_range(cam_vreg[j].delay * 1000,
+					(cam_vreg[j].delay * 1000) + 1000);
 		}
 	}
 	return rc;

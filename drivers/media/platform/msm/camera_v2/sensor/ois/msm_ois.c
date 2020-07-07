@@ -1,4 +1,4 @@
-/* Copyright (c) 2014-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2014 - 2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -27,35 +27,19 @@ DEFINE_MSM_MUTEX(msm_ois_mutex);
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
 #endif
 
+/* Decide read witch address from OIS.
+ * Only can read one address each time.
+ * Default address : 0xE001
+ */
+static bool read_E003;
+static bool read_E005;
+static bool read_E007;
+
 static struct v4l2_file_operations msm_ois_v4l2_subdev_fops;
 static int32_t msm_ois_power_up(struct msm_ois_ctrl_t *o_ctrl);
 static int32_t msm_ois_power_down(struct msm_ois_ctrl_t *o_ctrl);
 
 static struct i2c_driver msm_ois_i2c_driver;
-
-static int32_t data_type_to_num_bytes(
-	enum msm_camera_i2c_data_type data_type)
-{
-	int32_t ret_val;
-
-	switch (data_type) {
-	case MSM_CAMERA_I2C_BYTE_DATA:
-		ret_val = 1;
-		break;
-	case MSM_CAMERA_I2C_WORD_DATA:
-		ret_val = 2;
-		break;
-	case MSM_CAMERA_I2C_DWORD_DATA:
-		ret_val = 4;
-		break;
-	default:
-		pr_err("unsupported data type: %d\n",
-			data_type);
-		ret_val = 1;
-		break;
-	}
-	return ret_val;
-}
 
 static int32_t msm_ois_download(struct msm_ois_ctrl_t *o_ctrl)
 {
@@ -179,9 +163,7 @@ static int32_t msm_ois_write_settings(struct msm_ois_ctrl_t *o_ctrl,
 	uint16_t size, struct reg_settings_ois_t *settings)
 {
 	int32_t rc = -EFAULT;
-	int32_t i = 0, num_byte_seq = 0;
-	uint8_t *reg_data_seq;
-
+	int32_t i = 0;
 	struct msm_camera_i2c_seq_reg_array *reg_setting;
 	CDBG("Enter\n");
 
@@ -259,51 +241,13 @@ static int32_t msm_ois_write_settings(struct msm_ois_ctrl_t *o_ctrl,
 					settings[i].data_type);
 				break;
 			}
-			break;
 		}
-		case MSM_OIS_READ: {
-			switch (settings[i].data_type) {
-			case MSM_CAMERA_I2C_BYTE_DATA:
-			case MSM_CAMERA_I2C_WORD_DATA:
-			case MSM_CAMERA_I2C_DWORD_DATA:
-
-				num_byte_seq =
-					data_type_to_num_bytes
-					(settings[i].data_type);
-				reg_data_seq = kzalloc(sizeof(uint32_t),
-						GFP_KERNEL);
-				if (!reg_data_seq)
-					return -ENOMEM;
-
-				rc = msm_camera_cci_i2c_read_seq
-					(&o_ctrl->i2c_client,
-					settings[i].reg_addr,
-					reg_data_seq,
-					num_byte_seq);
-
-				memcpy(&settings[i].reg_data,
-					reg_data_seq, sizeof(uint32_t));
-
-				CDBG("ois data read 0x%x from address 0x%x",
-					settings[i].reg_addr,
-					settings[i].reg_data);
-
-				kfree(reg_data_seq);
-				reg_data_seq = NULL;
-
-				break;
-			default:
-				pr_err("Unsupport data type for MSM_OIS_READ: %d\n",
-					settings[i].data_type);
-				break;
-			}
-			break;
 		}
 
 		if (rc < 0)
 			break;
-		}
 	}
+
 	CDBG("Exit\n");
 	return rc;
 }
@@ -412,7 +356,7 @@ static int32_t msm_ois_control(struct msm_ois_ctrl_t *o_ctrl,
 	struct msm_ois_set_info_t *set_info)
 {
 	struct reg_settings_ois_t *settings = NULL;
-	int32_t rc = 0, i = 0;
+	int32_t rc = 0;
 	struct msm_camera_cci_client *cci_client = NULL;
 	CDBG("Enter\n");
 
@@ -454,18 +398,6 @@ static int32_t msm_ois_control(struct msm_ois_ctrl_t *o_ctrl,
 		rc = msm_ois_write_settings(o_ctrl,
 			set_info->ois_params.setting_size,
 			settings);
-
-		for (i = 0; i < set_info->ois_params.setting_size; i++) {
-			if (set_info->ois_params.settings[i].i2c_operation
-				== MSM_OIS_READ) {
-				set_info->ois_params.settings[i].reg_data =
-					settings[i].reg_data;
-				CDBG("ois_data at addr 0x%x is 0x%x",
-				set_info->ois_params.settings[i].reg_addr,
-				set_info->ois_params.settings[i].reg_data);
-			}
-		}
-
 		kfree(settings);
 		if (rc < 0) {
 			pr_err("Error\n");
@@ -527,8 +459,7 @@ static int32_t msm_ois_config(struct msm_ois_ctrl_t *o_ctrl,
 			break;
 		}
 
-		if (!conf_array.size ||
-			conf_array.size > I2C_SEQ_REG_DATA_MAX) {
+		if (!conf_array.size) {
 			pr_err("%s:%d failed\n", __func__, __LINE__);
 			rc = -EFAULT;
 			break;
@@ -556,6 +487,50 @@ static int32_t msm_ois_config(struct msm_ois_ctrl_t *o_ctrl,
 			&conf_array);
 		kfree(reg_setting);
 		break;
+	}
+	case CFG_OIS_I2C_READ_SEQ_TABLE:{
+		short read_addr = 0xE001;
+		int read_cnt = 6;
+		uint8_t buf[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+		if (read_E003) {
+			read_addr = 0xE003;
+			read_cnt = 8;
+		}
+		if (read_E005) {
+			read_addr = 0xE005;
+			read_cnt = 8;
+		}
+		if (read_E007) {
+			read_addr = 0xE007;
+			read_cnt = 6;
+		}
+
+		rc = o_ctrl->i2c_client.i2c_func_tbl->
+			i2c_read_seq(&o_ctrl->i2c_client, read_addr,
+				     &buf[0], read_cnt);
+		if (rc != 0)
+			pr_err("[OISDBG] %s : i2c_read_seq fail.\n", __func__);
+		else {
+			if (read_cnt == 6) {
+				cdata->pos.data0 = buf[0];
+				cdata->pos.data1 = buf[1];
+				cdata->pos.data2 = buf[2];
+				cdata->pos.data3 = buf[3];
+				cdata->pos.data4 = buf[4];
+				cdata->pos.data5 = buf[5];
+			} else {
+				cdata->pos.data0 = buf[0];
+				cdata->pos.data1 = buf[1];
+				cdata->pos.data2 = buf[2];
+				cdata->pos.data3 = buf[3];
+				cdata->pos.data4 = buf[4];
+				cdata->pos.data5 = buf[5];
+				cdata->pos.data6 = buf[6];
+				cdata->pos.data7 = buf[7];
+			}
+		}
+	break;
 	}
 	default:
 		break;
@@ -690,13 +665,11 @@ static long msm_ois_subdev_ioctl(struct v4l2_subdev *sd,
 			pr_err("o_ctrl->i2c_client.i2c_func_tbl NULL\n");
 			return -EINVAL;
 		}
-		mutex_lock(o_ctrl->ois_mutex);
 		rc = msm_ois_power_down(o_ctrl);
 		if (rc < 0) {
 			pr_err("%s:%d OIS Power down failed\n",
 				__func__, __LINE__);
 		}
-		mutex_unlock(o_ctrl->ois_mutex);
 		return msm_ois_close(sd, NULL);
 	default:
 		return -ENOIOCTLCMD;
@@ -851,10 +824,11 @@ static long msm_ois_subdev_do_ioctl(
 	u32 = (struct msm_ois_cfg_data32 *)arg;
 	parg = arg;
 
+	ois_data.cfgtype = u32->cfgtype;
+
 	switch (cmd) {
 	case VIDIOC_MSM_OIS_CFG32:
 		cmd = VIDIOC_MSM_OIS_CFG;
-		ois_data.cfgtype = u32->cfgtype;
 
 		switch (u32->cfgtype) {
 		case CFG_OIS_CONTROL:
@@ -888,17 +862,17 @@ static long msm_ois_subdev_do_ioctl(
 			settings.reg_setting =
 				compat_ptr(settings32.reg_setting);
 
+			ois_data.cfgtype = u32->cfgtype;
 			ois_data.cfg.settings = &settings;
 			parg = &ois_data;
+			break;
+		case CFG_OIS_I2C_READ_SEQ_TABLE:
+			/* Do nothing */
 			break;
 		default:
 			parg = &ois_data;
 			break;
 		}
-		break;
-	case VIDIOC_MSM_OIS_CFG:
-		pr_err("%s: invalid cmd 0x%x received\n", __func__, cmd);
-		return -EINVAL;
 	}
 	rc = msm_ois_subdev_ioctl(sd, cmd, parg);
 

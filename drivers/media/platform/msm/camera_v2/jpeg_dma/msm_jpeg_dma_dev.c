@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, 2019 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -816,12 +816,9 @@ static int msm_jpegdma_s_fmt_vid_out(struct file *file,
 static int msm_jpegdma_reqbufs(struct file *file,
 	void *fh, struct v4l2_requestbuffers *req)
 {
-	int ret = 0;
 	struct jpegdma_ctx *ctx = msm_jpegdma_ctx_from_fh(fh);
-	mutex_lock(&ctx->lock);
-	ret = v4l2_m2m_reqbufs(file, ctx->m2m_ctx, req);
-	mutex_unlock(&ctx->lock);
-	return ret;
+
+	return v4l2_m2m_reqbufs(file, ctx->m2m_ctx, req);
 }
 
 /*
@@ -891,12 +888,8 @@ static int msm_jpegdma_dqbuf(struct file *file,
 	void *fh, struct v4l2_buffer *buf)
 {
 	struct jpegdma_ctx *ctx = msm_jpegdma_ctx_from_fh(fh);
-	int ret;
 
-	mutex_lock(&ctx->lock);
-	ret = v4l2_m2m_dqbuf(file, ctx->m2m_ctx, buf);
-	mutex_unlock(&ctx->lock);
-	return ret;
+	return v4l2_m2m_dqbuf(file, ctx->m2m_ctx, buf);
 }
 
 /*
@@ -911,15 +904,13 @@ static int msm_jpegdma_streamon(struct file *file,
 	struct jpegdma_ctx *ctx = msm_jpegdma_ctx_from_fh(fh);
 	int ret;
 
-	mutex_lock(&ctx->lock);
-	if (!msm_jpegdma_config_ok(ctx)) {
-		mutex_unlock(&ctx->lock);
+	if (!msm_jpegdma_config_ok(ctx))
 		return -EINVAL;
-	}
+
 	ret = v4l2_m2m_streamon(file, ctx->m2m_ctx, buf_type);
 	if (ret < 0)
 		dev_err(ctx->jdma_device->dev, "Stream on fail\n");
-	mutex_unlock(&ctx->lock);
+
 	return ret;
 }
 
@@ -934,11 +925,11 @@ static int msm_jpegdma_streamoff(struct file *file,
 {
 	struct jpegdma_ctx *ctx = msm_jpegdma_ctx_from_fh(fh);
 	int ret;
-	mutex_lock(&ctx->lock);
+
 	ret = v4l2_m2m_streamoff(file, ctx->m2m_ctx, buf_type);
 	if (ret < 0)
 		dev_err(ctx->jdma_device->dev, "Stream off fails\n");
-	mutex_unlock(&ctx->lock);
+
 	return ret;
 }
 
@@ -1493,7 +1484,6 @@ static struct platform_driver jpegdma_driver = {
 		.name = MSM_JPEGDMA_DRV_NAME,
 		.owner = THIS_MODULE,
 		.of_match_table = msm_jpegdma_dt_match,
-		.suppress_bind_attrs = true,
 	},
 };
 

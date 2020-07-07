@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -29,7 +29,6 @@
 
 #include "msm_buf_mgr.h"
 #include "cam_hw_ops.h"
-#include <soc/qcom/cx_ipeak.h>
 
 #define VFE40_8974V1_VERSION 0x10000018
 #define VFE40_8974V2_VERSION 0x1001001A
@@ -155,17 +154,13 @@ struct msm_vfe_irq_ops {
 		struct msm_isp_timestamp *ts);
 	void (*process_axi_irq)(struct vfe_device *vfe_dev,
 		uint32_t irq_status0, uint32_t irq_status1,
-		uint32_t pingpong_status,
 		struct msm_isp_timestamp *ts);
 	void (*process_stats_irq)(struct vfe_device *vfe_dev,
 		uint32_t irq_status0, uint32_t irq_status1,
-		uint32_t pingpong_status,
 		struct msm_isp_timestamp *ts);
 	void (*config_irq)(struct vfe_device *vfe_dev,
 		uint32_t irq_status0, uint32_t irq_status1,
 		enum msm_isp_irq_operation);
-	void (*preprocess_camif_irq)(struct vfe_device *vfe_dev,
-		uint32_t irq_status0);
 };
 
 struct msm_vfe_axi_ops {
@@ -286,7 +281,7 @@ struct msm_vfe_stats_ops {
 
 	void (*update_ping_pong_addr)(struct vfe_device *vfe_dev,
 		struct msm_vfe_stats_stream *stream_info,
-		uint32_t pingpong_status, dma_addr_t paddr, uint32_t buf_size);
+		uint32_t pingpong_status, dma_addr_t paddr);
 
 	uint32_t (*get_frame_id)(struct vfe_device *vfe_dev);
 	uint32_t (*get_wm_mask)(uint32_t irq_status0, uint32_t irq_status1);
@@ -416,12 +411,6 @@ enum msm_isp_comp_irq_types {
 
 #define MSM_VFE_REQUESTQ_SIZE 8
 
-struct msm_isp_pending_buf_info {
-	uint32_t is_buf_done_pending;
-	struct msm_isp_buffer *buf;
-	uint32_t frame_id;
-};
-
 struct msm_vfe_axi_stream {
 	uint32_t frame_id;
 	enum msm_vfe_axi_state state;
@@ -464,7 +453,7 @@ struct msm_vfe_axi_stream {
 	uint32_t runtime_output_format;
 	enum msm_stream_rdi_input_type  rdi_input_type;
 	struct msm_isp_sw_framskip sw_skip;
-	int8_t sw_ping_pong_bit;
+	uint8_t sw_ping_pong_bit;
 
 	struct vfe_device *vfe_dev[MAX_VFE];
 	int num_isp;
@@ -477,8 +466,6 @@ struct msm_vfe_axi_stream {
 	 */
 	uint32_t vfe_mask;
 	uint32_t composite_irq[MSM_ISP_COMP_IRQ_MAX];
-	int lpm_mode;
-	struct msm_isp_pending_buf_info pending_buf_info;
 };
 
 struct msm_vfe_axi_composite_info {
@@ -506,8 +493,6 @@ struct msm_vfe_src_info {
 	struct timeval time_stamp;
 	enum msm_vfe_dual_hw_type dual_hw_type;
 	struct msm_vfe_dual_hw_ms_info dual_hw_ms_info;
-	bool accept_frame;
-	uint32_t lpm;
 };
 
 struct msm_vfe_fetch_engine_info {
@@ -605,13 +590,11 @@ struct msm_vfe_tasklet_queue_cmd {
 	struct list_head list;
 	uint32_t vfeInterruptStatus0;
 	uint32_t vfeInterruptStatus1;
-	uint32_t vfe_pingpong_status;
 	struct msm_isp_timestamp ts;
 	uint8_t cmd_used;
-	struct vfe_device *vfe_dev;
 };
 
-#define MSM_VFE_TASKLETQ_SIZE 400
+#define MSM_VFE_TASKLETQ_SIZE 200
 
 enum msm_vfe_overflow_state {
 	NO_OVERFLOW,
@@ -733,15 +716,6 @@ struct msm_vfe_irq_dump {
 		tasklet_debug[MAX_VFE_IRQ_DEBUG_DUMP_SIZE];
 };
 
-struct msm_vfe_tasklet {
-	spinlock_t tasklet_lock;
-	uint8_t taskletq_idx;
-	struct list_head tasklet_q;
-	struct tasklet_struct tasklet;
-	struct msm_vfe_tasklet_queue_cmd
-		tasklet_queue_cmd[MSM_VFE_TASKLETQ_SIZE];
-};
-
 struct msm_vfe_common_dev_data {
 	spinlock_t common_dev_data_lock;
 	struct dual_vfe_resource *dual_vfe_res;
@@ -749,10 +723,8 @@ struct msm_vfe_common_dev_data {
 	struct msm_vfe_axi_stream streams[VFE_AXI_SRC_MAX * MAX_VFE];
 	struct msm_vfe_stats_stream stats_streams[MSM_ISP_STATS_MAX * MAX_VFE];
 	struct mutex vfe_common_mutex;
-	uint8_t pd_buf_idx;
 	/* Irq debug Info */
 	struct msm_vfe_irq_dump vfe_irq_dump;
-	struct msm_vfe_tasklet tasklets[MAX_VFE + 1];
 };
 
 struct msm_vfe_common_subdev {
@@ -790,15 +762,7 @@ struct vfe_device {
 	uint32_t **vfe_clk_rates;
 	size_t num_clk;
 	size_t num_rates;
-	struct clk **hvx_clk;
-	struct msm_cam_clk_info *hvx_clk_info;
-	size_t num_hvx_clk;
-	size_t num_norm_clk;
-	bool hvx_clk_state;
 	enum cam_ahb_clk_vote ahb_vote;
-	enum cam_ahb_clk_vote user_requested_ahb_vote;
-	struct cx_ipeak_client *vfe_cx_ipeak;
-	int cx_ipeak_bit;
 
 	/* Sync variables*/
 	struct completion reset_complete;
@@ -807,11 +771,15 @@ struct vfe_device {
 	struct mutex core_mutex;
 	spinlock_t shared_data_lock;
 	spinlock_t reg_update_lock;
-	spinlock_t reset_completion_lock;
-	spinlock_t halt_completion_lock;
+	spinlock_t tasklet_lock;
 
 	/* Tasklet info */
 	atomic_t irq_cnt;
+	uint8_t taskletq_idx;
+	struct list_head tasklet_q;
+	struct tasklet_struct vfe_tasklet;
+	struct msm_vfe_tasklet_queue_cmd
+		tasklet_queue_cmd[MSM_VFE_TASKLETQ_SIZE];
 
 	/* Data structures */
 	struct msm_vfe_hardware_info *hw_info;
@@ -820,10 +788,10 @@ struct vfe_device {
 	struct msm_vfe_error_info error_info;
 	struct msm_vfe_fetch_engine_info fetch_engine_info;
 	enum msm_vfe_hvx_streaming_cmd hvx_cmd;
-	uint8_t cur_hvx_state;
 
 	/* State variables */
 	uint32_t vfe_hw_version;
+	int vfe_clk_idx;
 	uint32_t vfe_open_cnt;
 	uint8_t vt_enable;
 	uint32_t vfe_ub_policy;
@@ -833,13 +801,13 @@ struct vfe_device {
 	uint32_t is_split;
 	uint32_t dual_vfe_enable;
 	unsigned long page_fault_addr;
-	uint32_t vfe_hw_limit;
 
 	/* Debug variables */
 	int dump_reg;
 	struct msm_isp_statistics *stats;
 	uint64_t msm_isp_last_overflow_ab;
 	uint64_t msm_isp_last_overflow_ib;
+	uint32_t msm_isp_vfe_clk_rate;
 	struct msm_isp_ub_info *ub_info;
 	uint32_t isp_sof_debug;
 	uint32_t isp_raw0_debug;
@@ -852,12 +820,8 @@ struct vfe_device {
 	uint32_t bus_err_ign_mask;
 	uint32_t recovery_irq0_mask;
 	uint32_t recovery_irq1_mask;
-	/* total bandwidth per vfe */
-	uint64_t total_bandwidth;
-	struct isp_kstate *isp_page;
-
-	/* irq info */
-	uint32_t irq_sof_id;
+	/* Store the buf_idx for pd stats RDI stream */
+	uint8_t pd_buf_idx;
 };
 
 struct vfe_parent_device {

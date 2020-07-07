@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -387,14 +387,7 @@ static int eeprom_parse_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
 						reg_setting->reg_addr,
 						reg_setting->reg_data,
 						reg_setting->reg_data_size);
-					if (eeprom_map->
-						mem_settings[i].delay > 0)
-						usleep_range(eeprom_map->
-							mem_settings[i].delay
-							* 1000,
-							eeprom_map->
-							mem_settings[i].delay
-							* 1000 + 10);
+
 					kfree(reg_setting);
 					reg_setting = NULL;
 				}else{
@@ -1310,11 +1303,6 @@ static int msm_eeprom_spi_remove(struct spi_device *sdev)
 		return 0;
 	}
 
-	if (!e_ctrl->eboard_info) {
-		pr_err("%s: board info is NULL\n", __func__);
-		return 0;
-	}
-
 	msm_camera_i2c_dev_put_clk_info(
 		&e_ctrl->i2c_client.spi_client->spi_master->dev,
 		&e_ctrl->eboard_info->power_info.clk_info,
@@ -1831,11 +1819,6 @@ static int msm_eeprom_platform_remove(struct platform_device *pdev)
 	e_ctrl = (struct msm_eeprom_ctrl_t *)v4l2_get_subdevdata(sd);
 	if (!e_ctrl) {
 		pr_err("%s: eeprom device is NULL\n", __func__);
-		return 0;
-	}
-
-	if (!e_ctrl->eboard_info) {
-		pr_err("%s: board info is NULL\n", __func__);
 		return 0;
 	}
 

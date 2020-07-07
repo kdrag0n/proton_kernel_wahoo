@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -54,7 +54,7 @@ void msm_isp_notify(struct vfe_device *vfe_dev, uint32_t event_type,
 
 void msm_isp_process_axi_irq(struct vfe_device *vfe_dev,
 	uint32_t irq_status0, uint32_t irq_status1,
-	uint32_t pingpong_status, struct msm_isp_timestamp *ts);
+	struct msm_isp_timestamp *ts);
 
 void msm_isp_axi_disable_all_wm(struct vfe_device *vfe_dev);
 
@@ -136,15 +136,10 @@ static inline void msm_isp_cfg_stream_scratch(
 }
 
 static inline struct msm_vfe_axi_stream *msm_isp_get_stream_common_data(
-			struct vfe_device *vfe_dev, uint32_t stream_idx)
+			struct vfe_device *vfe_dev, int stream_idx)
 {
 	struct msm_vfe_common_dev_data *common_data = vfe_dev->common_data;
 	struct msm_vfe_axi_stream *stream_info;
-
-	if (stream_idx >= VFE_AXI_SRC_MAX) {
-		pr_err("invalid stream_idx %d\n", stream_idx);
-		return NULL;
-	}
 
 	if (vfe_dev->is_split &&  stream_idx < RDI_INTF_0)
 		stream_info = &common_data->streams[stream_idx];
@@ -165,6 +160,4 @@ static inline struct msm_vfe_axi_stream *msm_isp_vfe_get_stream(
 int msm_isp_cfg_offline_ping_pong_address(struct vfe_device *vfe_dev,
 	struct msm_vfe_axi_stream *stream_info, uint32_t pingpong_status,
 	uint32_t buf_idx);
-int msm_isp_ab_ib_update_lpm_mode(struct vfe_device *vfe_dev,
-	void *arg);
 #endif /* __MSM_ISP_AXI_UTIL_H__ */

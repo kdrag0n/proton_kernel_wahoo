@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -26,7 +26,6 @@
 #include <media/v4l2-ioctl.h>
 #include <media/v4l2-device.h>
 #include <media/videobuf2-core.h>
-#include <media/msmb_generic_buf_mgr.h>
 
 #include "msm.h"
 #include "msm_buf_mgr.h"
@@ -87,7 +86,7 @@ struct msm_isp_bufq *msm_isp_get_bufq(
 	/* bufq_handle cannot be 0 */
 	if ((bufq_handle == 0) ||
 		bufq_index >= BUF_MGR_NUM_BUF_Q ||
-		(bufq_index >= buf_mgr->num_buf_q))
+		(bufq_index > buf_mgr->num_buf_q))
 		return NULL;
 
 	bufq = &buf_mgr->bufq[bufq_index];
@@ -197,13 +196,6 @@ static int msm_isp_prepare_v4l2_buf(struct msm_isp_buf_mgr *buf_mgr,
 			__func__, stream_id);
 		return -EINVAL;
 	}
-
-	if (qbuf_buf->num_planes > MAX_PLANES_PER_STREAM) {
-		pr_err("%s: Invalid num_planes %d , stream id %x\n",
-			__func__, qbuf_buf->num_planes, stream_id);
-		return -EINVAL;
-	}
-
 	for (i = 0; i < qbuf_buf->num_planes; i++) {
 		mapped_info = &buf_info->mapped_info[i];
 		mapped_info->buf_fd = qbuf_buf->planes[i].addr;
@@ -230,8 +222,8 @@ static int msm_isp_prepare_v4l2_buf(struct msm_isp_buf_mgr *buf_mgr,
 		mapped_info->paddr += accu_length;
 		accu_length += qbuf_buf->planes[i].length;
 
-		CDBG("%s: plane: %d addr:%pK\n",
-			__func__, i, (void *)mapped_info->paddr);
+		CDBG("%s: plane: %d addr:%lu\n",
+			__func__, i, (unsigned long)mapped_info->paddr);
 
 	}
 	buf_info->num_planes = qbuf_buf->num_planes;
@@ -254,12 +246,6 @@ static void msm_isp_unprepare_v4l2_buf(
 	if (!buf_mgr || !buf_info) {
 		pr_err("%s: NULL ptr %pK %pK\n", __func__,
 			buf_mgr, buf_info);
-		return;
-	}
-
-	if (buf_info->num_planes > VIDEO_MAX_PLANES) {
-		pr_err("%s: Invalid num_planes %d , stream id %x\n",
-			__func__, buf_info->num_planes, stream_id);
 		return;
 	}
 
@@ -313,8 +299,8 @@ static int msm_isp_map_buf(struct msm_isp_buf_mgr *buf_mgr,
 		pr_err_ratelimited("%s: cannot map address", __func__);
 		goto smmu_map_error;
 	}
-	CDBG("%s: addr:%pK\n",
-		__func__, (void *)mapped_info->paddr);
+	CDBG("%s: addr:%lu\n",
+		__func__, (unsigned long)mapped_info->paddr);
 
 	return rc;
 smmu_map_error:
@@ -1167,15 +1153,10 @@ int msm_isp_smmu_attach(struct msm_isp_buf_mgr *buf_mgr,
 {
 	struct msm_vfe_smmu_attach_cmd *cmd = arg;
 	int rc = 0;
-	int32_t stall_disable = 1;
 
 	pr_debug("%s: cmd->security_mode : %d\n", __func__, cmd->security_mode);
-
 	mutex_lock(&buf_mgr->lock);
 	if (cmd->iommu_attach_mode == IOMMU_ATTACH) {
-		/* disable smmu stall on fault */
-		cam_smmu_set_attr(buf_mgr->iommu_hdl,
-			DOMAIN_ATTR_CB_STALL_DISABLE, &stall_disable);
 		/*
 		 * Call hypervisor thru scm call to notify secure or
 		 * non-secure mode
@@ -1288,7 +1269,6 @@ static int msm_isp_deinit_isp_buf_mgr(
 int msm_isp_proc_buf_cmd(struct msm_isp_buf_mgr *buf_mgr,
 	unsigned int cmd, void *arg)
 {
-	int rc = -EINVAL;
 	switch (cmd) {
 	case VIDIOC_MSM_ISP_REQUEST_BUF: {
 		struct msm_isp_buf_request *buf_req = arg;
@@ -1297,7 +1277,7 @@ int msm_isp_proc_buf_cmd(struct msm_isp_buf_mgr *buf_mgr,
 		memcpy(&buf_req_ver2, buf_req,
 			sizeof(struct msm_isp_buf_request));
 		buf_req_ver2.security_mode = NON_SECURE_MODE;
-		rc = buf_mgr->ops->request_buf(buf_mgr, &buf_req_ver2);
+		buf_mgr->ops->request_buf(buf_mgr, &buf_req_ver2);
 		memcpy(buf_req, &buf_req_ver2,
 			sizeof(struct msm_isp_buf_request));
 		break;
@@ -1305,35 +1285,35 @@ int msm_isp_proc_buf_cmd(struct msm_isp_buf_mgr *buf_mgr,
 	case VIDIOC_MSM_ISP_REQUEST_BUF_VER2: {
 		struct msm_isp_buf_request_ver2 *buf_req_ver2 = arg;
 
-		rc = buf_mgr->ops->request_buf(buf_mgr, buf_req_ver2);
+		buf_mgr->ops->request_buf(buf_mgr, buf_req_ver2);
 		break;
 	}
 	case VIDIOC_MSM_ISP_ENQUEUE_BUF: {
 		struct msm_isp_qbuf_info *qbuf_info = arg;
 
-		rc = buf_mgr->ops->enqueue_buf(buf_mgr, qbuf_info);
+		buf_mgr->ops->enqueue_buf(buf_mgr, qbuf_info);
 		break;
 	}
 	case VIDIOC_MSM_ISP_DEQUEUE_BUF: {
 		struct msm_isp_qbuf_info *qbuf_info = arg;
 
-		rc = buf_mgr->ops->dequeue_buf(buf_mgr, qbuf_info);
+		buf_mgr->ops->dequeue_buf(buf_mgr, qbuf_info);
 		break;
 	}
 	case VIDIOC_MSM_ISP_RELEASE_BUF: {
 		struct msm_isp_buf_request *buf_req = arg;
 
-		rc = buf_mgr->ops->release_buf(buf_mgr, buf_req->handle);
+		buf_mgr->ops->release_buf(buf_mgr, buf_req->handle);
 		break;
 	}
 	case VIDIOC_MSM_ISP_UNMAP_BUF: {
 		struct msm_isp_unmap_buf_req *unmap_req = arg;
 
-		rc = buf_mgr->ops->unmap_buf(buf_mgr, unmap_req->fd);
+		buf_mgr->ops->unmap_buf(buf_mgr, unmap_req->fd);
 		break;
 	}
 	}
-	return rc;
+	return 0;
 }
 
 static int msm_isp_buf_mgr_debug(struct msm_isp_buf_mgr *buf_mgr,
@@ -1342,15 +1322,14 @@ static int msm_isp_buf_mgr_debug(struct msm_isp_buf_mgr *buf_mgr,
 	struct msm_isp_buffer *bufs = NULL;
 	uint32_t i = 0, j = 0, k = 0, rc = 0;
 	char *print_buf = NULL, temp_buf[100];
-	uint32_t print_buf_size = 2000;
-	unsigned long start_addr = 0, end_addr = 0;
+	uint32_t start_addr = 0, end_addr = 0, print_buf_size = 2000;
 	int buf_addr_delta = -1;
 	int temp_delta = 0;
 	uint32_t debug_stream_id = 0;
 	uint32_t debug_buf_idx = 0;
 	uint32_t debug_buf_plane = 0;
-	unsigned long debug_start_addr = 0;
-	unsigned long debug_end_addr = 0;
+	uint32_t debug_start_addr = 0;
+	uint32_t debug_end_addr = 0;
 	uint32_t debug_frame_id = 0;
 	enum msm_isp_buffer_state debug_state = MSM_ISP_BUFFER_STATE_UNUSED;
 	unsigned long flags;
@@ -1409,8 +1388,8 @@ static int msm_isp_buf_mgr_debug(struct msm_isp_buf_mgr *buf_mgr,
 		debug_stream_id, debug_frame_id);
 	pr_err("%s: nearby buf index %d, plane %d, state %d\n", __func__,
 		debug_buf_idx, debug_buf_plane, debug_state);
-	pr_err("%s: buf address %pK -- %pK\n", __func__,
-		(void *)debug_start_addr, (void *)debug_end_addr);
+	pr_err("%s: buf address 0x%x -- 0x%x\n", __func__,
+		debug_start_addr, debug_end_addr);
 
 	if (BUF_DEBUG_FULL) {
 		print_buf = kzalloc(print_buf_size, GFP_ATOMIC);
@@ -1445,10 +1424,9 @@ static int msm_isp_buf_mgr_debug(struct msm_isp_buf_mgr *buf_mgr,
 							mapped_info[k].len;
 						snprintf(temp_buf,
 							sizeof(temp_buf),
-							" buf %d plane %d start_addr %pK end_addr %pK\n",
-							j, k,
-							(void *)start_addr,
-							(void *)end_addr);
+							" buf %d plane %d start_addr %x end_addr %x\n",
+							j, k, start_addr,
+							end_addr);
 						strlcat(print_buf, temp_buf,
 							print_buf_size);
 					}
