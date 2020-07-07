@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -328,8 +328,6 @@ static int eeprom_parse_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
 	int rc =  0, i, j;
 	uint8_t *memptr;
 	struct msm_eeprom_mem_map_t *eeprom_map;
-	struct msm_camera_i2c_seq_reg_array *reg_setting;
-	uint32_t reg_data_32;
 
 	e_ctrl->cal_data.mapdata = NULL;
 	e_ctrl->cal_data.num_data = msm_get_read_mem_size(eeprom_map_array);
@@ -360,53 +358,14 @@ static int eeprom_parse_memory_map(struct msm_eeprom_ctrl_t *e_ctrl,
 		for (i = 0; i < eeprom_map->memory_map_size; i++) {
 			switch (eeprom_map->mem_settings[i].i2c_operation) {
 			case MSM_CAM_WRITE: {
-				if(eeprom_map->mem_settings[i].data_type == MSM_CAMERA_I2C_DWORD_DATA){
-					reg_setting = kzalloc(sizeof(struct msm_camera_i2c_seq_reg_array), GFP_KERNEL);
-					if (!reg_setting)
-						return -ENOMEM;
-					e_ctrl->i2c_client.addr_type = eeprom_map->mem_settings[i].addr_type;
-
-					CDBG("MSM_CAMERA_I2C_DWORD_DATA :E\n");
-					CDBG("addr = %x, reg_data = %d", eeprom_map->mem_settings[i].reg_addr, eeprom_map->mem_settings[i].reg_data);
-					reg_data_32 = eeprom_map->mem_settings[i].reg_data;
-					CDBG("reg_data_32 = %d\n", reg_data_32);
-
-					reg_setting->reg_addr = eeprom_map->mem_settings[i].reg_addr;
-					CDBG("addr = %x", reg_setting->reg_addr);
-
-					reg_setting->reg_data[0] = (uint8_t)((reg_data_32 & 0xFF000000) >> 24);
-					reg_setting->reg_data[1] = (uint8_t)((reg_data_32 & 0x00FF0000) >> 16);
-					reg_setting->reg_data[2] = (uint8_t)((reg_data_32 & 0x0000FF00) >> 8);
-					reg_setting->reg_data[3] = (uint8_t)(reg_data_32 & 0x000000FF);
-					reg_setting->reg_data_size = 4;
-					CDBG("%x %x %x %x \n", reg_setting->reg_data[0], reg_setting->reg_data[1],
-						reg_setting->reg_data[2], reg_setting->reg_data[3]);
-
-					rc = e_ctrl->i2c_client.i2c_func_tbl->
-						i2c_write_seq(&(e_ctrl->i2c_client),
-						reg_setting->reg_addr,
-						reg_setting->reg_data,
-						reg_setting->reg_data_size);
-					if (eeprom_map->
-						mem_settings[i].delay > 0)
-						usleep_range(eeprom_map->
-							mem_settings[i].delay
-							* 1000,
-							eeprom_map->
-							mem_settings[i].delay
-							* 1000 + 10);
-					kfree(reg_setting);
-					reg_setting = NULL;
-				}else{
-					e_ctrl->i2c_client.addr_type =
-						eeprom_map->mem_settings[i].addr_type;
-					rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(
-						&(e_ctrl->i2c_client),
-						eeprom_map->mem_settings[i].reg_addr,
-						eeprom_map->mem_settings[i].reg_data,
-						eeprom_map->mem_settings[i].data_type);
-					msleep(eeprom_map->mem_settings[i].delay);
-				}
+				e_ctrl->i2c_client.addr_type =
+					eeprom_map->mem_settings[i].addr_type;
+				rc = e_ctrl->i2c_client.i2c_func_tbl->i2c_write(
+					&(e_ctrl->i2c_client),
+					eeprom_map->mem_settings[i].reg_addr,
+					eeprom_map->mem_settings[i].reg_data,
+					eeprom_map->mem_settings[i].data_type);
+				msleep(eeprom_map->mem_settings[i].delay);
 				if (rc < 0) {
 					pr_err("%s: page write failed\n",
 						__func__);
@@ -660,7 +619,6 @@ static int msm_eeprom_config(struct msm_eeprom_ctrl_t *e_ctrl,
 	struct msm_eeprom_cfg_data *cdata =
 		(struct msm_eeprom_cfg_data *)argp;
 	int rc = 0;
-	size_t length = 0;
 
 	CDBG("%s E\n", __func__);
 	switch (cdata->cfgtype) {
@@ -673,15 +631,9 @@ static int msm_eeprom_config(struct msm_eeprom_ctrl_t *e_ctrl,
 		}
 		CDBG("%s E CFG_EEPROM_GET_INFO\n", __func__);
 		cdata->is_supported = e_ctrl->is_supported;
-		length = strlen(e_ctrl->eboard_info->eeprom_name) + 1;
-		if (length > MAX_EEPROM_NAME) {
-			pr_err("%s:%d invalid eeprom_name length %d\n",
-				__func__, __LINE__, (int)length);
-			rc = -EINVAL;
-			break;
-		}
 		memcpy(cdata->cfg.eeprom_name,
-			e_ctrl->eboard_info->eeprom_name, length);
+			e_ctrl->eboard_info->eeprom_name,
+			sizeof(cdata->cfg.eeprom_name));
 		break;
 	case CFG_EEPROM_GET_CAL_DATA:
 		CDBG("%s E CFG_EEPROM_GET_CAL_DATA\n", __func__);
@@ -1310,11 +1262,6 @@ static int msm_eeprom_spi_remove(struct spi_device *sdev)
 		return 0;
 	}
 
-	if (!e_ctrl->eboard_info) {
-		pr_err("%s: board info is NULL\n", __func__);
-		return 0;
-	}
-
 	msm_camera_i2c_dev_put_clk_info(
 		&e_ctrl->i2c_client.spi_client->spi_master->dev,
 		&e_ctrl->eboard_info->power_info.clk_info,
@@ -1453,16 +1400,6 @@ static int eeprom_init_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 
 	power_info = &(e_ctrl->eboard_info->power_info);
 
-	if ((power_setting_array32->size > MAX_POWER_CONFIG) ||
-		(power_setting_array32->size_down > MAX_POWER_CONFIG) ||
-		(!power_setting_array32->size) ||
-		(!power_setting_array32->size_down)) {
-		pr_err("%s:%d invalid power setting size=%d size_down=%d\n",
-			__func__, __LINE__, power_setting_array32->size,
-			power_setting_array32->size_down);
-		rc = -EINVAL;
-		goto free_mem;
-	}
 	msm_eeprom_copy_power_settings_compat(
 		power_setting_array,
 		power_setting_array32);
@@ -1476,6 +1413,20 @@ static int eeprom_init_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 		power_setting_array->size;
 	power_info->power_down_setting_size =
 		power_setting_array->size_down;
+
+	if ((power_info->power_setting_size >
+		MAX_POWER_CONFIG) ||
+		(power_info->power_down_setting_size >
+		MAX_POWER_CONFIG) ||
+		(!power_info->power_down_setting_size) ||
+		(!power_info->power_setting_size)) {
+		rc = -EINVAL;
+		pr_err("%s:%d Invalid power setting size :%d, %d\n",
+			__func__, __LINE__,
+			power_info->power_setting_size,
+			power_info->power_down_setting_size);
+		goto free_mem;
+	}
 
 	if (e_ctrl->i2c_client.cci_client) {
 		e_ctrl->i2c_client.cci_client->i2c_freq_mode =
@@ -1526,7 +1477,6 @@ static int msm_eeprom_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 	struct msm_eeprom_cfg_data32 *cdata =
 		(struct msm_eeprom_cfg_data32 *)argp;
 	int rc = 0;
-	size_t length = 0;
 
 	CDBG("%s E\n", __func__);
 	switch (cdata->cfgtype) {
@@ -1539,15 +1489,9 @@ static int msm_eeprom_config32(struct msm_eeprom_ctrl_t *e_ctrl,
 		}
 		CDBG("%s E CFG_EEPROM_GET_INFO\n", __func__);
 		cdata->is_supported = e_ctrl->is_supported;
-		length = strlen(e_ctrl->eboard_info->eeprom_name) + 1;
-		if (length > MAX_EEPROM_NAME) {
-			pr_err("%s:%d invalid eeprom_name length %d\n",
-				__func__, __LINE__, (int)length);
-			rc = -EINVAL;
-			break;
-		}
 		memcpy(cdata->cfg.eeprom_name,
-			e_ctrl->eboard_info->eeprom_name, length);
+			e_ctrl->eboard_info->eeprom_name,
+			sizeof(cdata->cfg.eeprom_name));
 		break;
 	case CFG_EEPROM_GET_CAL_DATA:
 		CDBG("%s E CFG_EEPROM_GET_CAL_DATA\n", __func__);
@@ -1831,11 +1775,6 @@ static int msm_eeprom_platform_remove(struct platform_device *pdev)
 	e_ctrl = (struct msm_eeprom_ctrl_t *)v4l2_get_subdevdata(sd);
 	if (!e_ctrl) {
 		pr_err("%s: eeprom device is NULL\n", __func__);
-		return 0;
-	}
-
-	if (!e_ctrl->eboard_info) {
-		pr_err("%s: board info is NULL\n", __func__);
 		return 0;
 	}
 

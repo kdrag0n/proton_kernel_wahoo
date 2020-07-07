@@ -2,7 +2,6 @@
 #define __UAPI_MSMB_ISP__
 
 #include <linux/videodev2.h>
-#include <media/msmb_camera.h>
 
 #define MAX_PLANES_PER_STREAM 3
 #define MAX_NUM_STREAM 7
@@ -24,18 +23,7 @@
 
 #define ISP_STATS_STREAM_BIT  0x80000000
 
-#define VFE_HW_LIMIT 1
-#define ISP_KERNEL_STATE 1
-
 struct msm_vfe_cfg_cmd_list;
-
-struct isp_kstate {
-	uint32_t kernel_sofid;
-	uint32_t drop_reconfig;
-	uint32_t vfeid;
-	uint32_t dual_cam_drop_detected;
-	uint32_t dual_cam_drop;
-};
 
 enum ISP_START_PIXEL_PATTERN {
 	ISP_BAYER_RGRGRG,
@@ -273,26 +261,6 @@ struct msm_vfe_fetch_eng_start {
 	uint32_t frame_id;
 };
 
-enum msm_vfe_fetch_eng_pass {
-	OFFLINE_FIRST_PASS,
-	OFFLINE_SECOND_PASS,
-	OFFLINE_MAX_PASS,
-};
-
-struct msm_vfe_fetch_eng_multi_pass_start {
-	uint32_t session_id;
-	uint32_t stream_id;
-	uint32_t buf_idx;
-	uint8_t  offline_mode;
-	uint32_t fd;
-	uint32_t buf_addr;
-	uint32_t frame_id;
-	uint32_t output_buf_idx;
-	uint32_t input_buf_offset;
-	enum msm_vfe_fetch_eng_pass  offline_pass;
-	uint32_t output_stream_id;
-};
-
 struct msm_vfe_axi_plane_cfg {
 	uint32_t output_width; /*Include padding*/
 	uint32_t output_height;
@@ -304,10 +272,9 @@ struct msm_vfe_axi_plane_cfg {
 	uint8_t rdi_cid;/*CID 1-16*/
 };
 
-enum msm_stream_rdi_input_type {
-	MSM_CAMERA_RDI_MIN,
-	MSM_CAMERA_RDI_PDAF,
-	MSM_CAMERA_RDI_MAX,
+enum msm_stream_memory_input_t {
+	MEMORY_INPUT_DISABLED,
+	MEMORY_INPUT_ENABLED
 };
 
 struct msm_vfe_axi_stream_request_cmd {
@@ -330,7 +297,7 @@ struct msm_vfe_axi_stream_request_cmd {
 	uint32_t controllable_output;
 	uint32_t burst_len;
 	/* Flag indicating memory input stream */
-	enum msm_stream_rdi_input_type rdi_input_type;
+	enum msm_stream_memory_input_t memory_input;
 };
 
 struct msm_vfe_axi_stream_release_cmd {
@@ -361,7 +328,6 @@ enum msm_vfe_axi_stream_update_type {
 	UPDATE_STREAM_REMOVE_BUFQ,
 	UPDATE_STREAM_SW_FRAME_DROP,
 	UPDATE_STREAM_REQUEST_FRAMES_VER2,
-	UPDATE_STREAM_OFFLINE_AXI_CONFIG,
 };
 #define UPDATE_STREAM_REQUEST_FRAMES_VER2 UPDATE_STREAM_REQUEST_FRAMES_VER2
 
@@ -467,7 +433,6 @@ enum msm_vfe_reg_cfg_type {
 	VFE_HW_UPDATE_UNLOCK,
 	SET_WM_UB_SIZE,
 	SET_UB_POLICY,
-	GET_VFE_HW_LIMIT,
 };
 
 struct msm_vfe_cfg_cmd2 {
@@ -568,16 +533,6 @@ struct msm_isp_buf_request {
 	uint8_t num_buf;
 	uint32_t handle;
 	enum msm_isp_buf_type buf_type;
-};
-
-struct msm_isp_buf_request_ver2 {
-	uint32_t session_id;
-	uint32_t stream_id;
-	uint8_t num_buf;
-	uint32_t handle;
-	enum msm_isp_buf_type buf_type;
-	enum smmu_attach_mode security_mode;
-	uint32_t reserved[4];
 };
 
 struct msm_isp_qbuf_plane {
@@ -739,7 +694,6 @@ struct msm_isp_fetch_eng_event {
 struct msm_isp_stats_event {
 	uint32_t stats_mask;                        /* 4 bytes */
 	uint8_t stats_buf_idxs[MSM_ISP_STATS_MAX];  /* 11 bytes */
-	uint8_t pd_stats_idx;
 };
 
 struct msm_isp_stream_ack {
@@ -844,21 +798,6 @@ struct msm_isp_ahb_clk_cfg {
 	uint32_t reserved[2];
 };
 
-enum msm_vfe_dual_cam_sync_mode {
-	MSM_ISP_DUAL_CAM_ASYNC,
-	MSM_ISP_DUAL_CAM_SYNC,
-};
-
-struct msm_isp_dual_hw_master_slave_sync {
-	uint32_t sync_mode;
-	uint32_t reserved[2];
-};
-
-struct msm_vfe_dual_lpm_mode {
-	enum msm_vfe_axi_stream_src stream_src[VFE_AXI_SRC_MAX];
-	uint32_t num_src;
-	uint32_t lpm_mode;
-};
 #define V4L2_PIX_FMT_QBGGR8  v4l2_fourcc('Q', 'B', 'G', '8')
 #define V4L2_PIX_FMT_QGBRG8  v4l2_fourcc('Q', 'G', 'B', '8')
 #define V4L2_PIX_FMT_QGRBG8  v4l2_fourcc('Q', 'G', 'R', '8')
@@ -914,12 +853,6 @@ enum msm_isp_ioctl_cmd_code {
 	MSM_ISP_SET_DUAL_HW_MASTER_SLAVE,
 	MSM_ISP_MAP_BUF_START_FE,
 	MSM_ISP_UNMAP_BUF,
-	MSM_ISP_AHB_CLK_CFG,
-	MSM_ISP_DUAL_HW_MASTER_SLAVE_SYNC,
-	MSM_ISP_FETCH_ENG_MULTI_PASS_START,
-	MSM_ISP_MAP_BUF_START_MULTI_PASS_FE,
-	MSM_ISP_REQUEST_BUF_VER2,
-	MSM_ISP_DUAL_HW_LPM_MODE,
 };
 
 #define VIDIOC_MSM_VFE_REG_CFG \
@@ -1023,25 +956,6 @@ enum msm_isp_ioctl_cmd_code {
 		struct msm_isp_unmap_buf_req)
 
 #define VIDIOC_MSM_ISP_AHB_CLK_CFG \
-	_IOWR('V', MSM_ISP_AHB_CLK_CFG, struct msm_isp_ahb_clk_cfg)
-
-#define VIDIOC_MSM_ISP_DUAL_HW_MASTER_SLAVE_SYNC \
-	_IOWR('V', MSM_ISP_DUAL_HW_MASTER_SLAVE_SYNC, \
-	struct msm_isp_dual_hw_master_slave_sync)
-
-#define VIDIOC_MSM_ISP_FETCH_ENG_MULTI_PASS_START \
-	_IOWR('V', MSM_ISP_FETCH_ENG_MULTI_PASS_START, \
-		struct msm_vfe_fetch_eng_multi_pass_start)
-
-#define VIDIOC_MSM_ISP_MAP_BUF_START_MULTI_PASS_FE \
-	_IOWR('V', MSM_ISP_MAP_BUF_START_MULTI_PASS_FE, \
-		struct msm_vfe_fetch_eng_multi_pass_start)
-
-#define VIDIOC_MSM_ISP_REQUEST_BUF_VER2 \
-	_IOWR('V', MSM_ISP_REQUEST_BUF_VER2, struct msm_isp_buf_request_ver2)
-
-#define VIDIOC_MSM_ISP_DUAL_HW_LPM_MODE \
-	_IOWR('V', MSM_ISP_DUAL_HW_LPM_MODE, \
-	struct msm_vfe_dual_lpm_mode)
+	_IOWR('V', BASE_VIDIOC_PRIVATE+25, struct msm_isp_ahb_clk_cfg)
 
 #endif /* __MSMB_ISP__ */

@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -98,8 +98,6 @@ struct msm_isp_buffer {
 	struct timeval *tv;
 	/* Indicates whether buffer is used as ping ot pong buffer */
 	uint32_t pingpong_bit;
-	/* Indicates buffer is reconfig due to drop frame */
-	uint32_t is_drop_reconfig;
 
 	/*Native buffer*/
 	struct list_head list;
@@ -121,12 +119,11 @@ struct msm_isp_bufq {
 	spinlock_t bufq_lock;
 	/*Native buffer queue*/
 	struct list_head head;
-	enum smmu_attach_mode security_mode;
 };
 
 struct msm_isp_buf_ops {
 	int (*request_buf)(struct msm_isp_buf_mgr *buf_mgr,
-		struct msm_isp_buf_request_ver2 *buf_request);
+		struct msm_isp_buf_request *buf_request);
 
 	int (*enqueue_buf)(struct msm_isp_buf_mgr *buf_mgr,
 		struct msm_isp_qbuf_info *info);
@@ -194,20 +191,21 @@ struct msm_isp_buf_mgr {
 
 	struct msm_sd_req_vb2_q *vb2_ops;
 
+	/*IOMMU driver*/
+	int iommu_hdl;
 
 	/*Add secure mode*/
 	int secure_enable;
 
+	int num_iommu_ctx;
+	int num_iommu_secure_ctx;
 	int attach_ref_cnt;
 	enum msm_isp_buf_mgr_state attach_state;
 	struct device *isp_dev;
 	struct mutex lock;
 	/* Scratch buffer */
 	dma_addr_t scratch_buf_addr;
-	dma_addr_t scratch_buf_stats_addr;
 	uint32_t scratch_buf_range;
-	int iommu_hdl;
-	struct ion_handle *sc_handle;
 };
 
 int msm_isp_create_isp_buf_mgr(struct msm_isp_buf_mgr *buf_mgr,

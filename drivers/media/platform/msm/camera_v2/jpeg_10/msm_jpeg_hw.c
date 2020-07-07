@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017,2019 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -847,7 +847,7 @@ int msm_jpeg_hw_exec_cmds(struct msm_jpeg_hw_cmd *hw_cmd_p, uint32_t m_cmds,
 	uint32_t data;
 
 	while (m_cmds--) {
-		if (hw_cmd_p->offset >= max_size) {
+		if (hw_cmd_p->offset > max_size) {
 			JPEG_PR_ERR("%s:%d] %d exceed hw region %d\n", __func__,
 				__LINE__, hw_cmd_p->offset, max_size);
 			return -EFAULT;
@@ -903,40 +903,26 @@ int msm_jpeg_hw_exec_cmds(struct msm_jpeg_hw_cmd *hw_cmd_p, uint32_t m_cmds,
 
 void msm_jpeg_io_dump(void *base, int size)
 {
-	char line_str[140];
+	char line_str[128], *p_str;
 	void __iomem *addr = (void __iomem *)base;
 	int i;
 	u32 *p = (u32 *) addr;
-	size_t offset = 0;
-	size_t used = 0;
-	size_t min_range = 0;
-	size_t sizeof_line_str = sizeof(line_str);
 	u32 data;
 	JPEG_DBG_HIGH("%s:%d] %pK %d", __func__, __LINE__, addr, size);
 	line_str[0] = '\0';
-	for (i = 0; i < size; i = i+4) {
+	p_str = line_str;
+	for (i = 0; i < size/4; i++) {
 		if (i % 4 == 0) {
-			used = snprintf(line_str + offset,
-				sizeof_line_str - offset, "%pK", p+i);
-			if ((used < min_range) ||
-				(offset + used >= sizeof_line_str)) {
-				JPEG_PR_ERR("%s\n", line_str);
-				offset = 0;
-				line_str[0] = '\0';
-			} else {
-				offset += used;
-			}
+			snprintf(p_str, 12, "%08lx: ", (unsigned long)p);
+			p_str += 10;
 		}
-		data = msm_camera_io_r((void __iomem *) (p + i));
-		used = snprintf(line_str + offset,
-			sizeof_line_str - offset, " - %08x ", data);
-		if ((used < min_range) ||
-			(offset + used >= sizeof_line_str)) {
-			JPEG_PR_ERR("%s\n", line_str);
-			offset = 0;
+		data = msm_camera_io_r(p++);
+		snprintf(p_str, 12, "%08x ", data);
+		p_str += 9;
+		if ((i + 1) % 4 == 0) {
+			JPEG_DBG_HIGH("%s\n", line_str);
 			line_str[0] = '\0';
-		} else {
-			offset += used;
+			p_str = line_str;
 		}
 	}
 	if (line_str[0] != '\0')

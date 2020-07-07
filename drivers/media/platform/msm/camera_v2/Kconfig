@@ -3,6 +3,7 @@ config MSM_CAMERA_SENSOR
 	    depends on MSMB_CAMERA
 	    select NEW_LEDS
 	    select LEDS_CLASS
+	    select VIDEOBUF2_CORE
         ---help---
           This flag enables support for Camera Sensor.
           The sensor driver is capable of providing real time
