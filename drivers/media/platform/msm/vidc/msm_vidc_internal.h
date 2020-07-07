@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -143,7 +143,6 @@ struct msm_vidc_format {
 	char name[MAX_NAME_LENGTH];
 	u8 description[32];
 	u32 fourcc;
-	int num_planes;
 	int type;
 	u32 (*get_frame_size)(int plane, u32 height, u32 width);
 };
@@ -165,6 +164,8 @@ struct msm_video_device {
 struct session_prop {
 	u32 width[MAX_PORT_NUM];
 	u32 height[MAX_PORT_NUM];
+	u32 num_planes[MAX_PORT_NUM];
+	u32 extradata[MAX_PORT_NUM];
 	u32 fps;
 	u32 bitrate;
 };
@@ -204,9 +205,9 @@ struct dcvs_stats {
 	int load_high;
 	int min_threshold;
 	int max_threshold;
-	bool is_clock_scaled;
 	int etb_counter;
 	bool is_power_save_mode;
+	unsigned int extra_buffer_count;
 	u32 supported_codecs;
 };
 
@@ -230,6 +231,7 @@ enum msm_vidc_modes {
 	VIDC_TURBO = BIT(1),
 	VIDC_THUMBNAIL = BIT(2),
 	VIDC_LOW_POWER = BIT(3),
+	VIDC_REALTIME = BIT(4),
 };
 
 struct msm_vidc_core {
@@ -261,7 +263,7 @@ struct msm_vidc_inst {
 	void *session;
 	struct session_prop prop;
 	enum instance_state state;
-	struct msm_vidc_format *fmts[MAX_PORT_NUM];
+	struct msm_vidc_format fmts[MAX_PORT_NUM];
 	struct buf_queue bufq[MAX_PORT_NUM];
 	struct msm_vidc_list pendingq;
 	struct msm_vidc_list scratchbufs;
@@ -275,11 +277,9 @@ struct msm_vidc_inst {
 	struct completion completions[SESSION_MSG_END - SESSION_MSG_START + 1];
 	struct v4l2_ctrl **cluster;
 	struct v4l2_fh event_handler;
-	struct msm_smem *extradata_handle;
 	bool in_reconfig;
 	u32 reconfig_width;
 	u32 reconfig_height;
-	u32 seqchanged_count;
 	struct dentry *debugfs_root;
 	void *priv;
 	struct msm_vidc_debug debug;
@@ -298,6 +298,8 @@ struct msm_vidc_inst {
 	u32 buffers_held_in_driver;
 	atomic_t in_flush;
 	u32 pic_struct;
+	u32 colour_space;
+	u32 operating_rate;
 };
 
 extern struct msm_vidc_drv *vidc_driver;

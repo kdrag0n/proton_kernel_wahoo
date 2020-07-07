@@ -137,11 +137,11 @@ static int venus_clock_prepare_enable(void)
 
 static void venus_clock_disable_unprepare(void)
 {
-	int i;
 	struct msm_vidc_platform_resources *res = venus_data->resources;
 	struct clock_info *cl;
+	int i = res->clock_set.count;
 
-	for (i = 0; i < res->clock_set.count; i++) {
+	for (i--; i >= 0; i--) {
 		cl = &res->clock_set.clock_tbl[i];
 		clk_disable_unprepare(cl->clk);
 	}
@@ -190,8 +190,6 @@ static int pil_venus_auth_and_reset(void)
 {
 	int rc;
 
-	/* Need to enable this for new SMMU to set the device attribute */
-	bool disable_htw = true;
 	phys_addr_t fw_bias = venus_data->resources->firmware_base;
 	void __iomem *reg_base = venus_data->reg_base;
 	u32 ver;

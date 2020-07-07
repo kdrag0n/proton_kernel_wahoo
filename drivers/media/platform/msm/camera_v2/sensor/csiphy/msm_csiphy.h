@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -20,14 +20,20 @@
 #include <media/msm_cam_sensor.h>
 #include "msm_sd.h"
 #include "msm_camera_io_util.h"
+#include "msm_camera_dt_util.h"
 #include "cam_soc_api.h"
 
 #define MAX_CSIPHY 3
 #define CSIPHY_NUM_CLK_MAX  16
+#define MAX_CSIPHY_SETTINGS 120
 
 struct csiphy_reg_t {
 	uint32_t addr;
 	uint32_t data;
+};
+
+struct csiphy_settings_t {
+	struct csiphy_reg_t settings[MAX_CSIPHY_SETTINGS];
 };
 
 struct csiphy_reg_parms_t {
@@ -135,11 +141,13 @@ struct csiphy_reg_3ph_parms_t {
 	struct csiphy_reg_t mipi_csiphy_2ph_lnck_ctrl3;
 	struct csiphy_reg_t mipi_csiphy_2ph_lnn_ctrl14;
 	struct csiphy_reg_t mipi_csiphy_3ph_cmn_ctrl7_cphy;
+	struct csiphy_reg_t mipi_csiphy_2ph_lnck_ctrl0;
 };
 
 struct csiphy_ctrl_t {
 	struct csiphy_reg_parms_t csiphy_reg;
 	struct csiphy_reg_3ph_parms_t csiphy_3ph_reg;
+	struct csiphy_settings_t csiphy_combo_mode_settings;
 };
 
 enum msm_csiphy_state_t {
@@ -177,6 +185,9 @@ struct csiphy_device {
 	uint8_t num_irq_registers;
 	uint32_t csiphy_sof_debug;
 	uint32_t csiphy_sof_debug_count;
+	struct camera_vreg_t *csiphy_vreg;
+	struct regulator *csiphy_reg_ptr[MAX_REGULATOR];
+	int32_t regulator_count;
 };
 
 #define VIDIOC_MSM_CSIPHY_RELEASE \

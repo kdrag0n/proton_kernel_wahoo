@@ -2,6 +2,7 @@
 #define __LINUX_MSM_CAM_SENSOR_H
 
 #include <uapi/media/msm_cam_sensor.h>
+#include <uapi/media/msm_camsensor_sdk.h>
 
 #include <linux/compat.h>
 
@@ -70,6 +71,16 @@ struct csid_cfg_data32 {
 		compat_uptr_t csid_params;
 		compat_uptr_t csid_testmode_params;
 	} cfg;
+};
+
+struct msm_ir_led_cfg_data_t32 {
+	enum msm_ir_led_cfg_type_t cfg_type;
+	int32_t pwm_duty_on_ns;
+	int32_t pwm_period_ns;
+};
+
+struct msm_ir_cut_cfg_data_t32 {
+	enum msm_ir_cut_cfg_type_t cfg_type;
 };
 
 struct eeprom_read_t32 {
@@ -209,11 +220,35 @@ struct msm_ois_set_info_t32 {
 	struct msm_ois_params_t32 ois_params;
 };
 
+struct ois_position_32 {
+	uint8_t data0;
+	uint8_t data1;
+	uint8_t data2;
+	uint8_t data3;
+	uint8_t data4;
+	uint8_t data5;
+	uint8_t data6;
+	uint8_t data7;
+};
+
+struct msm_ois_readout32 {
+	int16_t ois_x_shift;
+	int16_t ois_y_shift;
+	int64_t readout_time;
+};
+
+struct ois_gyro32 {
+	uint8_t query_size;
+	compat_uptr_t gyro_data;
+};
+
 struct msm_ois_cfg_data32 {
 	int cfgtype;
+	struct ois_position_32 pos;
 	union {
 		struct msm_ois_set_info_t32 set_info;
 		compat_uptr_t settings;
+		struct ois_gyro32 gyro;
 	} cfg;
 };
 
@@ -258,7 +293,12 @@ struct msm_flash_cfg_data_t32 {
 
 #define VIDIOC_MSM_FLASH_CFG32 \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 13, struct msm_flash_cfg_data_t32)
+
+#define VIDIOC_MSM_IR_LED_CFG32 \
+	_IOWR('V', BASE_VIDIOC_PRIVATE + 14, struct msm_ir_led_cfg_data_t32)
+
+#define VIDIOC_MSM_IR_CUT_CFG32 \
+	_IOWR('V', BASE_VIDIOC_PRIVATE + 15, struct msm_ir_cut_cfg_data_t32)
 #endif
 
 #endif
-

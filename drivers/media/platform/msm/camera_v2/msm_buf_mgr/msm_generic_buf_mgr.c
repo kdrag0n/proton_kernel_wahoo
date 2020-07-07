@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -149,17 +149,15 @@ static int32_t msm_buf_mngr_buf_done(struct msm_buf_mngr_device *buf_mngr_dev,
 	list_for_each_entry_safe(bufs, save, &buf_mngr_dev->buf_qhead, entry) {
 		if ((bufs->session_id == buf_info->session_id) &&
 			(bufs->stream_id == buf_info->stream_id) &&
-			(bufs->vb2_v4l2_buf->vb2_buf.index ==
-				buf_info->index)) {
-			bufs->vb2_v4l2_buf->sequence  = buf_info->frame_id;
-			bufs->vb2_v4l2_buf->timestamp = buf_info->timestamp;
+			(bufs->index == buf_info->index)) {
 			ret = buf_mngr_dev->vb2_ops.buf_done
 					(bufs->vb2_v4l2_buf,
 						buf_info->session_id,
 						buf_info->stream_id,
 						buf_info->frame_id,
 						&buf_info->timestamp,
-						buf_info->reserved);
+						buf_info->reserved,
+						VB2_BUF_STATE_DONE);
 			list_del_init(&bufs->entry);
 			kfree(bufs);
 			break;
@@ -181,7 +179,7 @@ static int32_t msm_buf_mngr_put_buf(struct msm_buf_mngr_device *buf_mngr_dev,
 	list_for_each_entry_safe(bufs, save, &buf_mngr_dev->buf_qhead, entry) {
 		if ((bufs->session_id == buf_info->session_id) &&
 			(bufs->stream_id == buf_info->stream_id) &&
-			(bufs->vb2_v4l2_buf->vb2_buf.index == buf_info->index)) {
+			(bufs->index == buf_info->index)) {
 			ret = buf_mngr_dev->vb2_ops.put_buf(bufs->vb2_v4l2_buf,
 				buf_info->session_id, buf_info->stream_id);
 			list_del_init(&bufs->entry);
@@ -212,9 +210,10 @@ static int32_t msm_generic_buf_mngr_flush(
 			(bufs->stream_id == buf_info->stream_id)) {
 			ret = buf_mngr_dev->vb2_ops.buf_done(bufs->vb2_v4l2_buf,
 						buf_info->session_id,
-						buf_info->stream_id, 0, &ts, 0);
+						buf_info->stream_id, 0, &ts, 0,
+						VB2_BUF_STATE_DONE);
 			pr_err("Bufs not flushed: str_id = %d buf_index = %d ret = %d\n",
-			buf_info->stream_id, bufs->vb2_v4l2_buf->vb2_buf.index,
+			buf_info->stream_id, bufs->index,
 			ret);
 			list_del_init(&bufs->entry);
 			kfree(bufs);
@@ -299,10 +298,10 @@ static void msm_buf_mngr_sd_shutdown(struct msm_buf_mngr_device *dev,
 	if (!list_empty(&dev->buf_qhead)) {
 		list_for_each_entry_safe(bufs,
 			save, &dev->buf_qhead, entry) {
-			pr_info("%s: Delete invalid bufs =%lx, session_id=%u, bufs->ses_id=%d, str_id=%d, idx=%d\n",
-				__func__, (unsigned long)bufs, session->session,
+			pr_info("%s: Delete invalid bufs =%pK, session_id=%u, bufs->ses_id=%d, str_id=%d, idx=%d\n",
+				__func__, (void *)bufs, session->session,
 				bufs->session_id, bufs->stream_id,
-				bufs->vb2_v4l2_buf->vb2_buf.index);
+				bufs->index);
 			if (session->session == bufs->session_id) {
 				list_del_init(&bufs->entry);
 				kfree(bufs);
@@ -535,29 +534,27 @@ static long msm_buf_mngr_subdev_ioctl(struct v4l2_subdev *sd,
 	}
 	switch (cmd) {
 	case VIDIOC_MSM_BUF_MNGR_IOCTL_CMD: {
-		struct msm_camera_private_ioctl_arg k_ioctl, *ptr;
+		struct msm_camera_private_ioctl_arg k_ioctl;
+		struct msm_buf_mngr_info buf_info, *tmp = NULL;
 
 		if (!arg)
 			return -EINVAL;
-		ptr = arg;
-		k_ioctl = *ptr;
+		k_ioctl = *((struct msm_camera_private_ioctl_arg *)arg);
 		switch (k_ioctl.id) {
 		case MSM_CAMERA_BUF_MNGR_IOCTL_ID_GET_BUF_BY_IDX: {
-			struct msm_buf_mngr_info buf_info, *tmp = NULL;
 
 			if (k_ioctl.size != sizeof(struct msm_buf_mngr_info))
 				return -EINVAL;
 			if (!k_ioctl.ioctl_ptr)
 				return -EINVAL;
-
-			MSM_CAM_GET_IOCTL_ARG_PTR(&tmp, &k_ioctl.ioctl_ptr,
-				sizeof(tmp));
-			if (copy_from_user(&buf_info, tmp,
+			MSM_CAM_GET_IOCTL_ARG_PTR(&tmp,
+				&k_ioctl.ioctl_ptr, sizeof(tmp));
+			if (copy_from_user(&buf_info,
+				(void __user *)tmp,
 				sizeof(struct msm_buf_mngr_info))) {
 				return -EFAULT;
 			}
-			MSM_CAM_GET_IOCTL_ARG_PTR(&k_ioctl.ioctl_ptr,
-				&buf_info, sizeof(void *));
+			k_ioctl.ioctl_ptr = (uintptr_t)&buf_info;
 			argp = &k_ioctl;
 			rc = msm_cam_buf_mgr_ops(cmd, argp);
 			}
@@ -678,6 +675,7 @@ static long msm_camera_buf_mgr_internal_compat_ioctl(struct file *file,
 			return -EINVAL;
 		}
 		k_ioctl.ioctl_ptr = (__u64)&buf_info;
+		k_ioctl.size = sizeof(struct msm_buf_mngr_info);
 		rc = msm_camera_buf_mgr_fetch_buf_info(&buf_info32, &buf_info,
 			(unsigned long)tmp_compat_ioctl_ptr);
 		if (rc < 0) {

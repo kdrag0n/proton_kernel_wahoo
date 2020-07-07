@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -46,7 +46,7 @@
 #define ISPIF_INTF_CMD_DISABLE_IMMEDIATELY    0x02
 
 #define ISPIF_TIMEOUT_SLEEP_US                1000
-#define ISPIF_TIMEOUT_ALL_US               1000000
+#define ISPIF_TIMEOUT_ALL_US              10000000
 #define ISPIF_SOF_DEBUG_COUNT                    5
 
 #undef CDBG
@@ -68,12 +68,18 @@ static void msm_ispif_io_dump_reg(struct ispif_device *ispif)
 {
 	if (!ispif->enb_dump_reg)
 		return;
+
+	if (!ispif->base) {
+		pr_err("%s: null pointer for the ispif base\n", __func__);
+		return;
+	}
+
 	msm_camera_io_dump(ispif->base, 0x250, 0);
 }
 
 
 static inline int msm_ispif_is_intf_valid(uint32_t csid_version,
-	uint8_t intf_type)
+	enum msm_ispif_vfe_intf intf_type)
 {
 	return ((csid_version <= CSID_VERSION_V22 && intf_type != VFE0) ||
 		(intf_type >= VFE_MAX)) ? false : true;
@@ -133,7 +139,7 @@ static void msm_ispif_get_pack_mask_from_cfg(
 			pack_mask[0] |= temp;
 		CDBG("%s:num %d cid %d mode %d pack_mask %x %x\n",
 			__func__, entry->num_cids, entry->cids[i],
-			pack_cfg[i].pack_mode,
+			pack_cfg[entry->cids[i]].pack_mode,
 			pack_mask[0], pack_mask[1]);
 
 	}
@@ -163,6 +169,16 @@ static int msm_ispif_config2(struct ispif_device *ispif,
 			params->num);
 		rc = -EINVAL;
 		return rc;
+	}
+
+	for (i = 0; i < params->num; i++) {
+		int j;
+
+		if (params->entries[i].num_cids > MAX_CID_CH_PARAM_ENTRY)
+			return -EINVAL;
+		for (j = 0; j < params->entries[i].num_cids; j++)
+			if (params->entries[i].cids[j] >= CID_MAX)
+				return -EINVAL;
 	}
 
 	for (i = 0; i < params->num; i++) {
@@ -443,7 +459,7 @@ static int msm_ispif_reset_hw(struct ispif_device *ispif)
 	msm_camera_io_w(ISPIF_RST_CMD_MASK,
 				ispif->base + ISPIF_RST_CMD_ADDR);
 
-	timeout = wait_for_completion_timeout(
+	timeout = wait_for_completion_interruptible_timeout(
 			&ispif->reset_complete[VFE0], msecs_to_jiffies(500));
 	CDBG("%s: VFE0 done\n", __func__);
 
@@ -457,7 +473,7 @@ static int msm_ispif_reset_hw(struct ispif_device *ispif)
 		atomic_set(&ispif->reset_trig[VFE1], 1);
 		msm_camera_io_w(ISPIF_RST_CMD_1_MASK,
 					ispif->base + ISPIF_RST_CMD_1_ADDR);
-		timeout = wait_for_completion_timeout(
+		timeout = wait_for_completion_interruptible_timeout(
 				&ispif->reset_complete[VFE1],
 				msecs_to_jiffies(500));
 		CDBG("%s: VFE1 done\n", __func__);
@@ -602,7 +618,7 @@ static int msm_ispif_reset(struct ispif_device *ispif)
 			ispif->base + ISPIF_VFE_m_INTF_CMD_0(i));
 		msm_camera_io_w(ISPIF_STOP_INTF_IMMEDIATELY,
 			ispif->base + ISPIF_VFE_m_INTF_CMD_1(i));
-		pr_debug("%s: base %lx", __func__, (unsigned long)ispif->base);
+		pr_debug("%s: base %pK", __func__, ispif->base);
 		msm_camera_io_w(0, ispif->base +
 			ISPIF_VFE_m_PIX_INTF_n_CID_MASK(i, 0));
 		msm_camera_io_w(0, ispif->base +
@@ -840,7 +856,7 @@ static uint16_t msm_ispif_get_cids_mask_from_cfg(
 	uint16_t cids_mask = 0;
 	BUG_ON(!entry);
 
-	for (i = 0; i < entry->num_cids; i++)
+	for (i = 0; i < entry->num_cids && i < MAX_CID_CH_PARAM_ENTRY; i++)
 		cids_mask |= (1 << entry->cids[i]);
 
 	return cids_mask;
@@ -970,7 +986,7 @@ static void msm_ispif_intf_cmd(struct ispif_device *ispif, uint32_t cmd_bits,
 			pr_err("%s: invalid interface type\n", __func__);
 			return;
 		}
-		if (params->entries[i].num_cids > MAX_CID_CH) {
+		if (params->entries[i].num_cids > MAX_CID_CH_PARAM_ENTRY) {
 			pr_err("%s: out of range of cid_num %d\n",
 				__func__, params->entries[i].num_cids);
 			return;
@@ -1120,7 +1136,7 @@ static int msm_ispif_restart_frame_boundary(struct ispif_device *ispif,
 		/* initiate reset of ISPIF */
 		msm_camera_io_w(ISPIF_RST_CMD_MASK_RESTART,
 				ispif->base + ISPIF_RST_CMD_ADDR);
-		timeout = wait_for_completion_timeout(
+		timeout = wait_for_completion_interruptible_timeout(
 			&ispif->reset_complete[VFE0], msecs_to_jiffies(500));
 		if (timeout <= 0) {
 			pr_err("%s: VFE0 reset wait timeout\n", __func__);
@@ -1133,7 +1149,7 @@ static int msm_ispif_restart_frame_boundary(struct ispif_device *ispif,
 		atomic_set(&ispif->reset_trig[VFE1], 1);
 		msm_camera_io_w(ISPIF_RST_CMD_1_MASK_RESTART,
 			ispif->base + ISPIF_RST_CMD_1_ADDR);
-		timeout = wait_for_completion_timeout(
+		timeout = wait_for_completion_interruptible_timeout(
 				&ispif->reset_complete[VFE1],
 				msecs_to_jiffies(500));
 		if (timeout <= 0) {
@@ -1444,8 +1460,15 @@ static inline void msm_ispif_read_irq_status(struct ispif_irq_status *out,
 	}
 
 	if (fatal_err == true) {
-		pr_err("%s: fatal error, stop ispif immediately\n", __func__);
+		pr_err_ratelimited("%s: fatal error, stop ispif immediately\n",
+				__func__);
 		for (i = 0; i < ispif->vfe_info.num_vfe; i++) {
+			msm_camera_io_w(0x0,
+				ispif->base + ISPIF_VFE_m_IRQ_MASK_0(i));
+			msm_camera_io_w(0x0,
+				ispif->base + ISPIF_VFE_m_IRQ_MASK_1(i));
+			msm_camera_io_w(0x0,
+				ispif->base + ISPIF_VFE_m_IRQ_MASK_2(i));
 			msm_camera_io_w(ISPIF_STOP_INTF_IMMEDIATELY,
 				ispif->base + ISPIF_VFE_m_INTF_CMD_0(i));
 			msm_camera_io_w(ISPIF_STOP_INTF_IMMEDIATELY,
@@ -1534,9 +1557,6 @@ error_ahb:
 static void msm_ispif_release(struct ispif_device *ispif)
 {
 	BUG_ON(!ispif);
-
-	msm_ispif_reset(ispif);
-	msm_ispif_reset_hw(ispif);
 
 	msm_camera_enable_irq(ispif->irq, 0);
 
@@ -1648,7 +1668,7 @@ static long msm_ispif_subdev_fops_ioctl(struct file *file, unsigned int cmd,
 static int ispif_open_node(struct v4l2_subdev *sd, struct v4l2_subdev_fh *fh)
 {
 	struct ispif_device *ispif = v4l2_get_subdevdata(sd);
-	int rc;
+	int rc = 0;
 
 	mutex_lock(&ispif->mutex);
 	if (0 == ispif->open_cnt) {
