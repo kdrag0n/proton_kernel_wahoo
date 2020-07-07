@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -475,56 +475,67 @@ static int vfe_set_common_data(struct platform_device *pdev)
 
 static int vfe_probe(struct platform_device *pdev)
 {
+	struct vfe_parent_device *vfe_parent_dev;
 	int rc = 0;
 	struct device_node *node;
 	struct platform_device *new_dev = NULL;
 	uint32_t i = 0;
 	char name[10] = "\0";
-	uint32_t num_hw_sd;
 
-	memset(&vfe_common_data, 0, sizeof(vfe_common_data));
-	mutex_init(&vfe_common_data.vfe_common_mutex);
-	spin_lock_init(&vfe_common_data.common_dev_data_lock);
-	spin_lock_init(&vfe_common_data.vfe_irq_dump.
-			common_dev_irq_dump_lock);
-	spin_lock_init(&vfe_common_data.vfe_irq_dump.
-			common_dev_tasklet_dump_lock);
-	for (i = 0; i < (VFE_AXI_SRC_MAX * MAX_VFE); i++)
-		spin_lock_init(&(vfe_common_data.streams[i].lock));
-	for (i = 0; i < (MSM_ISP_STATS_MAX * MAX_VFE); i++)
-		spin_lock_init(&(vfe_common_data.stats_streams[i].lock));
-
-	for (i = 0; i <= MAX_VFE; i++) {
-		INIT_LIST_HEAD(&vfe_common_data.tasklets[i].tasklet_q);
-		tasklet_init(&vfe_common_data.tasklets[i].tasklet,
-			msm_isp_do_tasklet,
-			(unsigned long)(&vfe_common_data.tasklets[i]));
-		spin_lock_init(&vfe_common_data.tasklets[i].tasklet_lock);
+	vfe_parent_dev = kzalloc(sizeof(struct vfe_parent_device),
+		GFP_KERNEL);
+	if (!vfe_parent_dev) {
+		rc = -ENOMEM;
+		goto end;
 	}
 
-	of_property_read_u32(pdev->dev.of_node, "num_child", &num_hw_sd);
+	vfe_parent_dev->common_sd = kzalloc(
+		sizeof(struct msm_vfe_common_subdev), GFP_KERNEL);
+	if (!vfe_parent_dev->common_sd) {
+		rc = -ENOMEM;
+		goto probe_fail1;
+	}
 
-	for (i = 0; i < num_hw_sd; i++) {
+	vfe_parent_dev->common_sd->common_data = &vfe_common_data;
+	memset(&vfe_common_data, 0, sizeof(vfe_common_data));
+	spin_lock_init(&vfe_common_data.common_dev_data_lock);
+
+	of_property_read_u32(pdev->dev.of_node,
+		"num_child", &vfe_parent_dev->num_hw_sd);
+
+	for (i = 0; i < vfe_parent_dev->num_hw_sd; i++) {
 		node = NULL;
 		snprintf(name, sizeof(name), "qcom,vfe%d", i);
 		node = of_find_node_by_name(NULL, name);
 		if (!node) {
 			pr_err("%s: Error! Cannot find node in dtsi %s\n",
 				__func__, name);
-			break;
+			goto probe_fail2;
 		}
 		new_dev = of_find_device_by_node(node);
 		if (!new_dev) {
 			pr_err("%s: Failed to find device on bus %s\n",
 				__func__, node->name);
-			break;
+			goto probe_fail2;
 		}
-		new_dev->dev.platform_data = &vfe_common_data;
+		vfe_parent_dev->child_list[i] = new_dev;
+		new_dev->dev.platform_data =
+			(void *)vfe_parent_dev->common_sd->common_data;
 		rc = vfe_set_common_data(new_dev);
 		if (rc < 0)
-			break;
+			goto probe_fail2;
 	}
 
+	vfe_parent_dev->num_sd = vfe_parent_dev->num_hw_sd;
+	vfe_parent_dev->pdev = pdev;
+
+	return rc;
+
+probe_fail2:
+	kfree(vfe_parent_dev->common_sd);
+probe_fail1:
+	kfree(vfe_parent_dev);
+end:
 	return rc;
 }
 
@@ -568,12 +579,6 @@ int vfe_hw_probe(struct platform_device *pdev)
 		}
 		vfe_dev->hw_info =
 			(struct msm_vfe_hardware_info *) match_dev->data;
-		/* Cx ipeak support */
-		if (of_find_property(pdev->dev.of_node,
-			"qcom,vfe-cx-ipeak", NULL)) {
-			vfe_dev->vfe_cx_ipeak = cx_ipeak_register(
-				pdev->dev.of_node, "qcom,vfe-cx-ipeak");
-		}
 	} else {
 		vfe_dev->hw_info = (struct msm_vfe_hardware_info *)
 			platform_get_device_id(pdev)->driver_data;
@@ -595,6 +600,10 @@ int vfe_hw_probe(struct platform_device *pdev)
 		goto probe_fail3;
 	}
 
+	INIT_LIST_HEAD(&vfe_dev->tasklet_q);
+	tasklet_init(&vfe_dev->vfe_tasklet,
+		msm_isp_do_tasklet, (unsigned long)vfe_dev);
+
 	v4l2_subdev_init(&vfe_dev->subdev.sd, &msm_vfe_v4l2_subdev_ops);
 	vfe_dev->subdev.sd.internal_ops =
 		&msm_vfe_subdev_internal_ops;
@@ -607,6 +616,7 @@ int vfe_hw_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, &vfe_dev->subdev.sd);
 	mutex_init(&vfe_dev->realtime_mutex);
 	mutex_init(&vfe_dev->core_mutex);
+	spin_lock_init(&vfe_dev->tasklet_lock);
 	spin_lock_init(&vfe_dev->shared_data_lock);
 	spin_lock_init(&vfe_dev->reg_update_lock);
 	spin_lock_init(&req_history_lock);
@@ -640,6 +650,8 @@ int vfe_hw_probe(struct platform_device *pdev)
 		goto probe_fail3;
 	}
 	msm_isp_enable_debugfs(vfe_dev, msm_isp_bw_request_history);
+	vfe_dev->buf_mgr->num_iommu_secure_ctx =
+		vfe_dev->hw_info->num_iommu_secure_ctx;
 	vfe_dev->buf_mgr->init_done = 1;
 	vfe_dev->vfe_open_cnt = 0;
 	return rc;

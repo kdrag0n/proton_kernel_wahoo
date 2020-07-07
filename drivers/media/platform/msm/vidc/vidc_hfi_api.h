@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2016,2019 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -66,9 +66,6 @@
 
 /* 16 encoder and 16 decoder sessions */
 #define VIDC_MAX_SESSIONS               32
-#define VIDC_MAX_DECODE_SESSIONS        16
-#define VIDC_MAX_ENCODE_SESSIONS        16
-
 
 enum vidc_status {
 	VIDC_ERR_NONE = 0x0,
@@ -245,7 +242,6 @@ enum hal_property {
 	HAL_PARAM_VENC_SESSION_QP_RANGE_PACKED,
 	HAL_PARAM_VENC_H264_TRANSFORM_8x8,
 	HAL_PARAM_VENC_VIDEO_SIGNAL_INFO,
-	HAL_PARAM_VENC_IFRAMESIZE_TYPE,
 };
 
 enum hal_domain {
@@ -1006,13 +1002,6 @@ struct hal_video_signal_info {
 	bool full_range;
 };
 
-enum hal_iframesize_type {
-	HAL_IFRAMESIZE_TYPE_DEFAULT,
-	HAL_IFRAMESIZE_TYPE_MEDIUM,
-	HAL_IFRAMESIZE_TYPE_HUGE,
-	HAL_IFRAMESIZE_TYPE_UNLIMITED,
-};
-
 enum vidc_resource_id {
 	VIDC_RESOURCE_NONE,
 	VIDC_RESOURCE_OCMEM,
@@ -1354,7 +1343,6 @@ struct msm_vidc_cb_cmd_done {
 		struct vidc_hal_session_init_done session_init_done;
 		struct hal_buffer_info buffer_info;
 		union hal_get_property property;
-		enum hal_flush flush_type;
 	} data;
 };
 
@@ -1369,7 +1357,6 @@ struct msm_vidc_cb_event {
 	ion_phys_addr_t packet_buffer;
 	ion_phys_addr_t extra_data_buffer;
 	u32 pic_struct;
-	u32 colour_space;
 };
 
 struct msm_vidc_cb_data_done {

@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -22,7 +22,6 @@
 #include "msm_vidc_res_parse.h"
 #include "venus_boot.h"
 #include "soc/qcom/secure_buffer.h"
-#include "soc/qcom/cx_ipeak.h"
 
 enum clock_properties {
 	CLOCK_PROP_HAS_SCALING = 1 << 0,
@@ -54,7 +53,7 @@ fail_read:
 	return 0;
 }
 
-static inline bool is_compatible(char *compat)
+bool is_compatible(char *compat)
 {
 	return !!of_find_compatible_node(NULL, NULL, compat);
 }
@@ -64,6 +63,7 @@ static inline enum imem_type read_imem_type(struct platform_device *pdev)
 	return is_compatible("qcom,msm-ocmem") ? IMEM_OCMEM :
 		is_compatible("qcom,msm-vmem") ? IMEM_VMEM :
 						IMEM_NONE;
+
 }
 
 static inline void msm_vidc_free_allowed_clocks_table(
@@ -171,8 +171,6 @@ void msm_vidc_free_platform_resources(
 	msm_vidc_free_qdss_addr_table(res);
 	msm_vidc_free_bus_vectors(res);
 	msm_vidc_free_buffer_usage_table(res);
-	cx_ipeak_unregister(res->cx_ipeak_context);
-	res->cx_ipeak_context = NULL;
 }
 
 static int msm_vidc_load_reg_table(struct msm_vidc_platform_resources *res)
@@ -518,7 +516,7 @@ error:
 }
 
 /* A comparator to compare loads (needed later on) */
-static int cmp_load_freq_table(const void *a, const void *b)
+int cmp(const void *a, const void *b)
 {
 	/* want to sort in reverse so flip the comparison */
 	return ((struct load_freq_table *)b)->load -
@@ -570,7 +568,7 @@ static int msm_vidc_load_freq_table(struct msm_vidc_platform_resources *res)
 	 * logic to work, just sort it ourselves
 	 */
 	sort(res->load_freq_tbl, res->load_freq_tbl_size,
-			sizeof(*res->load_freq_tbl), cmp_load_freq_table, NULL);
+			sizeof(*res->load_freq_tbl), cmp, NULL);
 	return rc;
 }
 
@@ -798,64 +796,82 @@ static int msm_vidc_load_regulator_table(
 	struct platform_device *pdev = res->pdev;
 	struct regulator_set *regulators = &res->regulator_set;
 	struct device_node *domains_parent_node = NULL;
-	uint32_t reg_count = 0, i;
+	struct property *domains_property = NULL;
+	int reg_count = 0;
 
 	regulators->count = 0;
 	regulators->regulator_tbl = NULL;
+
 	domains_parent_node = pdev->dev.of_node;
+	for_each_property_of_node(domains_parent_node, domains_property) {
+		const char *search_string = "-supply";
+		char *supply;
+		bool matched = false;
 
-	if (of_get_property(domains_parent_node, "supply", &reg_count) &&
-								reg_count) {
-		reg_count /= sizeof(uint32_t);
-		regulators->regulator_tbl = devm_kzalloc(&pdev->dev,
-				sizeof(*regulators->regulator_tbl) *
-				reg_count, GFP_KERNEL);
+		/* check if current property is possibly a regulator */
+		supply = strnstr(domains_property->name, search_string,
+				strlen(domains_property->name) + 1);
+		matched = supply && (*(supply + strlen(search_string)) == '\0');
+		if (!matched)
+			continue;
 
-		if (!regulators->regulator_tbl) {
+		reg_count++;
+	}
+
+	regulators->regulator_tbl = devm_kzalloc(&pdev->dev,
+			sizeof(*regulators->regulator_tbl) *
+			reg_count, GFP_KERNEL);
+
+	if (!regulators->regulator_tbl) {
+		rc = -ENOMEM;
+		dprintk(VIDC_ERR,
+			"Failed to alloc memory for regulator table\n");
+		goto err_reg_tbl_alloc;
+	}
+
+	for_each_property_of_node(domains_parent_node, domains_property) {
+		const char *search_string = "-supply";
+		char *supply;
+		bool matched = false;
+		struct device_node *regulator_node = NULL;
+		struct regulator_info *rinfo = NULL;
+
+		/* check if current property is possibly a regulator */
+		supply = strnstr(domains_property->name, search_string,
+				strlen(domains_property->name) + 1);
+		matched = supply && (supply[strlen(search_string)] == '\0');
+		if (!matched)
+			continue;
+
+		/* make sure prop isn't being misused */
+		regulator_node = of_parse_phandle(domains_parent_node,
+				domains_property->name, 0);
+		if (IS_ERR(regulator_node)) {
+			dprintk(VIDC_WARN, "%s is not a phandle\n",
+					domains_property->name);
+			continue;
+		}
+		regulators->count++;
+
+		/* populate regulator info */
+		rinfo = &regulators->regulator_tbl[regulators->count - 1];
+		rinfo->name = devm_kzalloc(&pdev->dev,
+			(supply - domains_property->name) + 1, GFP_KERNEL);
+		if (!rinfo->name) {
 			rc = -ENOMEM;
 			dprintk(VIDC_ERR,
-				"Failed to alloc memory for regulator table\n");
-			goto err_reg_tbl_alloc;
+					"Failed to alloc memory for regulator name\n");
+			goto err_reg_name_alloc;
 		}
+		strlcpy(rinfo->name, domains_property->name,
+			(supply - domains_property->name) + 1);
 
-		for (i = 0; i < reg_count; i++) {
-			struct device_node *regulator_node = NULL;
-			struct regulator_info *rinfo = NULL;
-			const char *name = NULL;
+		rinfo->has_hw_power_collapse = of_property_read_bool(
+			regulator_node, "qcom,support-hw-trigger");
 
-			regulator_node = of_parse_phandle(domains_parent_node,
-				"supply", i);
-			if (IS_ERR(regulator_node)) {
-				dprintk(VIDC_WARN,
-					"Failed to load regulator\n");
-				continue;
-			}
-			if (of_property_read_string_index(domains_parent_node,
-						"supply-names", i, &name)) {
-				name = "unknown";
-			}
-			regulators->count++;
-			rinfo =
-				&regulators->
-				regulator_tbl[regulators->count - 1];
-			rinfo->name = devm_kzalloc(&pdev->dev,
-				strlen(name) + 1, GFP_KERNEL);
-			if (!rinfo->name) {
-				rc = -ENOMEM;
-				dprintk(VIDC_ERR,
-						"Failed to alloc memory for regulator name\n");
-				goto err_reg_name_alloc;
-			}
-			strlcpy(rinfo->name, name, strlen(name) + 1);
-
-			rinfo->has_hw_power_collapse = of_property_read_bool(
-				regulator_node, "qcom,support-hw-trigger");
-
-			dprintk(VIDC_DBG,
-				"Found regulator %s: h/w collapse = %s\n",
+		dprintk(VIDC_DBG, "Found regulator %s: h/w collapse = %s\n",
 				rinfo->name,
 				rinfo->has_hw_power_collapse ? "yes" : "no");
-		}
 	}
 
 	if (!regulators->count)
@@ -1068,13 +1084,6 @@ int read_platform_resources_from_dt(
 		goto err_load_max_hw_load;
 	}
 
-	rc = of_property_read_u32(pdev->dev.of_node, "qcom,power-conf",
-			&res->power_conf);
-	if (rc) {
-		dprintk(VIDC_DBG,
-			"Failed to read power configuration: %d\n", rc);
-	}
-
 	rc = msm_vidc_populate_legacy_context_bank(res);
 	if (rc) {
 		dprintk(VIDC_ERR,
@@ -1104,7 +1113,7 @@ int read_platform_resources_from_dt(
 	res->debug_timeout = of_property_read_bool(pdev->dev.of_node,
 			"qcom,debug-timeout");
 
-	msm_vidc_debug_timeout |= res->debug_timeout;
+	res->debug_timeout |= msm_vidc_debug_timeout;
 
 	of_property_read_u32(pdev->dev.of_node,
 			"qcom,pm-qos-latency-us", &res->pm_qos_latency_us);
@@ -1117,36 +1126,8 @@ int read_platform_resources_from_dt(
 	of_property_read_u32(pdev->dev.of_node,
 			"qcom,max-secure-instances",
 			&res->max_secure_inst_count);
-
-	res->cx_ipeak_context = cx_ipeak_register(pdev->dev.of_node,
-			"qcom,cx-ipeak-data");
-
-	if (IS_ERR(res->cx_ipeak_context)) {
-		rc = PTR_ERR(res->cx_ipeak_context);
-		if (rc == -EPROBE_DEFER)
-			dprintk(VIDC_INFO,
-				"cx-ipeak register failed. Deferring probe!");
-		else
-			dprintk(VIDC_ERR,
-				"cx-ipeak register failed. rc: %d", rc);
-
-		res->cx_ipeak_context = NULL;
-		goto err_register_cx_ipeak;
-	} else if (res->cx_ipeak_context) {
-		dprintk(VIDC_INFO, "cx-ipeak register successful");
-	} else {
-		dprintk(VIDC_INFO, "cx-ipeak register not implemented");
-	}
-
-	of_property_read_u32(pdev->dev.of_node,
-			"qcom,clock-freq-threshold",
-			&res->clk_freq_threshold);
-	dprintk(VIDC_DBG, "cx ipeak threshold frequency = %u\n",
-				res->clk_freq_threshold);
-
 	return rc;
 
-err_register_cx_ipeak:
 err_setup_legacy_cb:
 err_load_max_hw_load:
 	msm_vidc_free_allowed_clocks_table(res);
@@ -1185,6 +1166,7 @@ static int msm_vidc_setup_context_bank(struct context_bank_info *cb,
 		struct device *dev)
 {
 	int rc = 0;
+	int disable_htw = 1;
 	int secure_vmid = VMID_INVAL;
 	struct bus_type *bus;
 
@@ -1248,6 +1230,11 @@ int msm_vidc_smmu_fault_handler(struct iommu_domain *domain,
 {
 	struct msm_vidc_core *core = token;
 	struct msm_vidc_inst *inst;
+	struct buffer_info *temp;
+	struct internal_buf *buf;
+	int i = 0;
+	bool is_decode = false;
+	enum vidc_ports port;
 
 	if (!domain || !core) {
 		dprintk(VIDC_ERR, "%s - invalid param %pK %pK\n",
@@ -1262,7 +1249,52 @@ int msm_vidc_smmu_fault_handler(struct iommu_domain *domain,
 
 	mutex_lock(&core->lock);
 	list_for_each_entry(inst, &core->instances, list) {
-		msm_comm_print_inst_info(inst);
+		is_decode = inst->session_type == MSM_VIDC_DECODER;
+		port = is_decode ? OUTPUT_PORT : CAPTURE_PORT;
+		dprintk(VIDC_ERR,
+			"%s session, Codec type: %s HxW: %d x %d fps: %d bitrate: %d bit-depth: %s\n",
+			is_decode ? "Decode" : "Encode", inst->fmts[port]->name,
+			inst->prop.height[port], inst->prop.width[port],
+			inst->prop.fps, inst->prop.bitrate,
+			!inst->bit_depth ? "8" : "10");
+
+		dprintk(VIDC_ERR,
+			"---Buffer details for inst: %pK of type: %d---\n",
+			inst, inst->session_type);
+		mutex_lock(&inst->registeredbufs.lock);
+		dprintk(VIDC_ERR, "registered buffer list:\n");
+		list_for_each_entry(temp, &inst->registeredbufs.list, list)
+			for (i = 0; i < temp->num_planes; i++)
+				dprintk(VIDC_ERR,
+					"type: %d plane: %d addr: %pa size: %d\n",
+					temp->type, i, &temp->device_addr[i],
+					temp->size[i]);
+
+		mutex_unlock(&inst->registeredbufs.lock);
+
+		mutex_lock(&inst->scratchbufs.lock);
+		dprintk(VIDC_ERR, "scratch buffer list:\n");
+		list_for_each_entry(buf, &inst->scratchbufs.list, list)
+			dprintk(VIDC_ERR, "type: %d addr: %pa size: %zu\n",
+				buf->buffer_type, &buf->handle->device_addr,
+				buf->handle->size);
+		mutex_unlock(&inst->scratchbufs.lock);
+
+		mutex_lock(&inst->persistbufs.lock);
+		dprintk(VIDC_ERR, "persist buffer list:\n");
+		list_for_each_entry(buf, &inst->persistbufs.list, list)
+			dprintk(VIDC_ERR, "type: %d addr: %pa size: %zu\n",
+				buf->buffer_type, &buf->handle->device_addr,
+				buf->handle->size);
+		mutex_unlock(&inst->persistbufs.lock);
+
+		mutex_lock(&inst->outputbufs.lock);
+		dprintk(VIDC_ERR, "dpb buffer list:\n");
+		list_for_each_entry(buf, &inst->outputbufs.list, list)
+			dprintk(VIDC_ERR, "type: %d addr: %pa size: %zu\n",
+				buf->buffer_type, &buf->handle->device_addr,
+				buf->handle->size);
+		mutex_unlock(&inst->outputbufs.lock);
 	}
 	core->smmu_fault_handled = true;
 	mutex_unlock(&core->lock);

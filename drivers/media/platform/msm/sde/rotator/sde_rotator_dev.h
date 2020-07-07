@@ -1,4 +1,4 @@
-/* Copyright (c) 2015-2017, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2015-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -21,7 +21,6 @@
 #include <linux/iommu.h>
 #include <linux/dma-buf.h>
 #include <linux/msm-bus.h>
-#include <linux/kthread.h>
 #include <media/v4l2-device.h>
 #include <media/v4l2-fh.h>
 #include <media/v4l2-ctrls.h>
@@ -49,7 +48,6 @@ struct sde_rotator_ctx;
  * @addr: Address of rotator mmu mapped buffer.
  * @secure: Non-secure/secure buffer.
  * @buffer: Pointer to dma buf associated with this fd.
- * @ihandle: ion handle associated with this fd
  */
 struct sde_rotator_buf_handle {
 	int fd;
@@ -59,7 +57,6 @@ struct sde_rotator_buf_handle {
 	ion_phys_addr_t addr;
 	int secure;
 	struct dma_buf *buffer;
-	struct ion_handle *handle;
 };
 
 /*
@@ -69,7 +66,6 @@ struct sde_rotator_buf_handle {
  * @fence_ts: completion timestamp associated with fd
  * @qbuf_ts: timestamp associated with buffer queue event
  * @dqbuf_ts: Pointer to timestamp associated with buffer dequeue event
- * @comp_ratio: compression ratio of this buffer
  */
 struct sde_rotator_vbinfo {
 	int fd;
@@ -77,7 +73,6 @@ struct sde_rotator_vbinfo {
 	u32 fence_ts;
 	ktime_t qbuf_ts;
 	ktime_t *dqbuf_ts;
-	struct sde_mult_factor comp_ratio;
 };
 
 /*
@@ -124,7 +119,6 @@ struct sde_rotator_ctx {
 	s32 vflip;
 	s32 rotate;
 	s32 secure;
-	s32 secure_camera;
 	atomic_t command_pending;
 	int abort_pending;
 	int nbuf_cap;
@@ -132,8 +126,8 @@ struct sde_rotator_ctx {
 	struct sde_rotator_vbinfo *vbinfo_cap;
 	struct sde_rotator_vbinfo *vbinfo_out;
 	wait_queue_head_t wait_queue;
-	struct kthread_work submit_work;
-	struct kthread_work retire_work;
+	struct work_struct submit_work;
+	struct work_struct retire_work;
 	struct sde_rot_queue work_queue;
 	struct sde_rot_entry_container *request;
 	struct sde_rot_file_private *private;
@@ -166,9 +160,6 @@ struct sde_rotator_statistics {
  * @session_id: Next context session identifier
  * @fence_timeout: Timeout value in msec for fence wait
  * @streamoff_timeout: Timeout value in msec for stream off
- * @min_rot_clk: Override the minimum rotator clock from perf calculation
- * @min_bw: Override the minimum bandwidth from perf calculation
- * @min_overhead_us: Override the minimum overhead in us from perf calculation
  * @debugfs_root: Pointer to debugfs directory entry.
  * @stats: placeholder for rotator statistics
  */
@@ -186,12 +177,8 @@ struct sde_rotator_device {
 	u32 session_id;
 	u32 fence_timeout;
 	u32 streamoff_timeout;
-	u32 min_rot_clk;
-	u32 min_bw;
-	u32 min_overhead_us;
 	struct sde_rotator_statistics stats;
 	struct dentry *debugfs_root;
-	struct dentry *perf_root;
 };
 
 static inline

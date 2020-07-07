@@ -17,94 +17,9 @@
 #include "msm_camera_i2c_mux.h"
 #include <linux/regulator/rpm-smd-regulator.h>
 #include <linux/regulator/consumer.h>
-#include <linux/drv2624.h>
-
-/*fw update start*/
-#ifdef CONFIG_FW_UPDATE
-#include "fw_update.h"
-#endif
-/*fw update end*/
 
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
-
-static struct msm_camera_i2c_fn_t msm_sensor_cci_func_tbl;
-static struct msm_camera_i2c_fn_t msm_sensor_secure_func_tbl;
-
-/*fw update start*/
-#ifdef CONFIG_FW_UPDATE
-int msm_sensor_checkfw(struct msm_sensor_ctrl_t *s_ctrl)
-{
-	pr_info("[OISFW]:%s \n", __func__);
-	if (!s_ctrl) {
-		pr_err("[OISFW]:%s:%d failed: %pK\n",
-			__func__, __LINE__, s_ctrl);
-		return -EINVAL;
-	}
-
-	return checkFWUpdate(s_ctrl);
-}
-
-int msm_sensor_checkvcmfw(struct msm_sensor_ctrl_t *s_ctrl)
-{
-	int rc = 0;
-	int addr_type_backop = 0;
-	uint16_t cci_client_sid_backup;
-
-	/*Backup I2C slave address and addr type*/
-	cci_client_sid_backup = s_ctrl->sensor_i2c_client->cci_client->sid;
-	addr_type_backop = s_ctrl->sensor_i2c_client->addr_type;
-
-
-	pr_info("[VCMFW]: %s:E sid = %d\n", __func__,
-			s_ctrl->sensor_i2c_client->cci_client->sid);
-	pr_info("[VCMFW]: %s:E addr_type = %d\n", __func__,
-			s_ctrl->sensor_i2c_client->addr_type);
-	if (!s_ctrl) {
-		pr_err("[VCMFW]:%s:%d failed: %pK\n",
-			__func__, __LINE__, s_ctrl);
-
-		pr_err("[VCMFW]: %s:X sid = %d\n", __func__,
-			   s_ctrl->sensor_i2c_client->cci_client->sid);
-		return -EINVAL;
-	}
-	rc = checkVCMFWUpdate(s_ctrl);
-	if (rc != 0)
-		pr_err("[VCMFW]:%s checkVCMFWUpdate failed rc = %d\n",
-			   __func__, rc);
-	/*Restore the I2C slave address and addr type*/
-	s_ctrl->sensor_i2c_client->cci_client->sid = cci_client_sid_backup;
-	s_ctrl->sensor_i2c_client->addr_type = addr_type_backop;
-
-	pr_info("[VCMFW]: %s:X sid = %d\n", __func__,
-			s_ctrl->sensor_i2c_client->cci_client->sid);
-	pr_info("[VCMFW]: %s:X addr_type = %d\n", __func__,
-			s_ctrl->sensor_i2c_client->addr_type);
-
-	return rc;
-}
-
-#endif
-/*fw update end*/
-
-static void print_time(const char *func, const char *sensor_name)
-{
-	struct timespec time;
-	struct tm tmresult;
-
-	time = __current_kernel_time();
-	time_to_tm(time.tv_sec, sys_tz.tz_minuteswest * 60 * (-1), &tmresult);
-
-	pr_info("%s: [%02d-%02d %02d:%02d:%02d.%03lu] %s\n",
-			func,
-			tmresult.tm_mon+1,
-			tmresult.tm_mday,
-			tmresult.tm_hour,
-			tmresult.tm_min,
-			tmresult.tm_sec,
-			(unsigned long) time.tv_nsec/1000000,
-			sensor_name);
-}
 
 static void msm_sensor_adjust_mclk(struct msm_camera_power_ctrl_t *ctrl)
 {
@@ -217,15 +132,6 @@ int msm_sensor_power_down(struct msm_sensor_ctrl_t *s_ctrl)
 			__func__, __LINE__, power_info, sensor_i2c_client);
 		return -EINVAL;
 	}
-
-	drv2624_enable_haptics();
-
-	/* Power down secure session if it exist*/
-	if (s_ctrl->is_secure)
-		msm_camera_tz_i2c_power_down(sensor_i2c_client);
-
-	print_time(__func__, s_ctrl->sensordata->sensor_name);
-
 	return msm_camera_power_down(power_info, sensor_device_type,
 		sensor_i2c_client);
 }
@@ -264,27 +170,7 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 	if (s_ctrl->set_mclk_23880000)
 		msm_sensor_adjust_mclk(power_info);
 
-	CDBG("Sensor %d tagged as %s\n", s_ctrl->id,
-		(s_ctrl->is_secure)?"SECURE":"NON-SECURE");
-
 	for (retry = 0; retry < 3; retry++) {
-		if (s_ctrl->is_secure) {
-			rc = msm_camera_tz_i2c_power_up(sensor_i2c_client);
-			if (rc < 0) {
-#ifdef CONFIG_MSM_SEC_CCI_DEBUG
-				CDBG("Secure Sensor %d use cci\n", s_ctrl->id);
-				/* session is not secure */
-				s_ctrl->sensor_i2c_client->i2c_func_tbl =
-					&msm_sensor_cci_func_tbl;
-#else  /* CONFIG_MSM_SEC_CCI_DEBUG */
-				return rc;
-#endif /* CONFIG_MSM_SEC_CCI_DEBUG */
-			} else {
-				/* session is secure */
-				s_ctrl->sensor_i2c_client->i2c_func_tbl =
-					&msm_sensor_secure_func_tbl;
-			}
-		}
 		rc = msm_camera_power_up(power_info, s_ctrl->sensor_device_type,
 			sensor_i2c_client);
 		if (rc < 0)
@@ -299,11 +185,6 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 			break;
 		}
 	}
-
-	if (!rc)
-		drv2624_disable_haptics();
-
-	print_time(__func__, sensor_name);
 
 	return rc;
 }
@@ -985,18 +866,7 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		}
 		break;
 	}
-	/*fw update start*/
-#ifdef CONFIG_FW_UPDATE
-	case CFG_FW_UPDATE: {
-		rc = msm_sensor_checkfw(s_ctrl);
-		break;
-	}
-	case CFG_VCM_FW_UPDATE: {
-		rc = msm_sensor_checkvcmfw(s_ctrl);
-		break;
-	}
-#endif
-	/*fw update end*/
+
 	default:
 		rc = -EFAULT;
 		break;
@@ -1478,18 +1348,7 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void __user *argp)
 		}
 		break;
 	}
-	/*fw update start*/
-#ifdef CONFIG_FW_UPDATE
-	case CFG_FW_UPDATE: {
-		rc = msm_sensor_checkfw(s_ctrl);
-		break;
-	}
-	case CFG_VCM_FW_UPDATE: {
-		rc = msm_sensor_checkvcmfw(s_ctrl);
-		break;
-	}
-#endif
-	/*fw update end*/
+
 	default:
 		rc = -EFAULT;
 		break;
@@ -1548,12 +1407,6 @@ static struct msm_camera_i2c_fn_t msm_sensor_cci_func_tbl = {
 	.i2c_read = msm_camera_cci_i2c_read,
 	.i2c_read_seq = msm_camera_cci_i2c_read_seq,
 	.i2c_write = msm_camera_cci_i2c_write,
-	/* fw update start */
-#ifdef CONFIG_FW_UPDATE
-	.i2c_write_seq = msm_camera_cci_i2c_write_seq,
-	.i2c_poll =  msm_camera_cci_i2c_poll,
-#endif
-	/* fw update end */
 	.i2c_write_table = msm_camera_cci_i2c_write_table,
 	.i2c_write_seq_table = msm_camera_cci_i2c_write_seq_table,
 	.i2c_write_table_w_microdelay =
@@ -1578,21 +1431,6 @@ static struct msm_camera_i2c_fn_t msm_sensor_qup_func_tbl = {
 	.i2c_write_table_async = msm_camera_qup_i2c_write_table,
 	.i2c_write_table_sync = msm_camera_qup_i2c_write_table,
 	.i2c_write_table_sync_block = msm_camera_qup_i2c_write_table,
-};
-
-static struct msm_camera_i2c_fn_t msm_sensor_secure_func_tbl = {
-	.i2c_read = msm_camera_tz_i2c_read,
-	.i2c_read_seq = msm_camera_tz_i2c_read_seq,
-	.i2c_write = msm_camera_tz_i2c_write,
-	.i2c_write_table = msm_camera_tz_i2c_write_table,
-	.i2c_write_seq_table = msm_camera_tz_i2c_write_seq_table,
-	.i2c_write_table_w_microdelay =
-		msm_camera_tz_i2c_write_table_w_microdelay,
-	.i2c_util = msm_sensor_tz_i2c_util,
-	.i2c_write_conf_tbl = msm_camera_tz_i2c_write_conf_tbl,
-	.i2c_write_table_async = msm_camera_tz_i2c_write_table_async,
-	.i2c_write_table_sync = msm_camera_tz_i2c_write_table_sync,
-	.i2c_write_table_sync_block = msm_camera_tz_i2c_write_table_sync_block,
 };
 
 int32_t msm_sensor_init_default_params(struct msm_sensor_ctrl_t *s_ctrl)
@@ -1627,9 +1465,6 @@ int32_t msm_sensor_init_default_params(struct msm_sensor_ctrl_t *s_ctrl)
 
 		/* Get CCI subdev */
 		cci_client->cci_subdev = msm_cci_get_subdev();
-
-		if (s_ctrl->is_secure)
-			msm_camera_tz_i2c_register_sensor((void *)s_ctrl);
 
 		/* Update CCI / I2C function table */
 		if (!s_ctrl->sensor_i2c_client->i2c_func_tbl)

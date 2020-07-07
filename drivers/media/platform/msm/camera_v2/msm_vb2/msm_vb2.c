@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2016, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -19,19 +19,15 @@ static int msm_vb2_queue_setup(struct vb2_queue *q,
 	unsigned int sizes[], void *alloc_ctxs[])
 {
 	int i;
-	struct msm_v4l2_format_data *data = NULL;
-	int rc = -EINVAL;
-
-	mutex_lock(q->lock);
-	data = q->drv_priv;
+	struct msm_v4l2_format_data *data = q->drv_priv;
 
 	if (!data) {
 		pr_err("%s: drv_priv NULL\n", __func__);
-		goto done;
+		return -EINVAL;
 	}
 	if (data->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
 		if (WARN_ON(data->num_planes > VIDEO_MAX_PLANES))
-			goto done;
+			return -EINVAL;
 
 		*num_planes = data->num_planes;
 
@@ -40,37 +36,25 @@ static int msm_vb2_queue_setup(struct vb2_queue *q,
 	} else {
 		pr_err("%s: Unsupported buf type :%d\n", __func__,
 			   data->type);
-		goto done;
+		return -EINVAL;
 	}
-	rc = 0;
-
-done:
-	mutex_unlock(q->lock);
-	return rc;
+	return 0;
 }
 
 int msm_vb2_buf_init(struct vb2_buffer *vb)
 {
 	struct msm_stream *stream;
-	struct msm_session *session;
 	struct msm_vb2_buffer *msm_vb2_buf;
 	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
-
-	session = msm_get_session_from_vb2q(vb->vb2_queue);
-	if (IS_ERR_OR_NULL(session))
-		return -EINVAL;
-
-	read_lock(&session->stream_rwlock);
 
 	stream = msm_get_stream_from_vb2q(vb->vb2_queue);
 	if (!stream) {
 		pr_err("%s: Couldn't find stream\n", __func__);
-		read_unlock(&session->stream_rwlock);
 		return -EINVAL;
 	}
 	msm_vb2_buf = container_of(vbuf, struct msm_vb2_buffer, vb2_v4l2_buf);
 	msm_vb2_buf->in_freeq = 0;
-	read_unlock(&session->stream_rwlock);
+
 	return 0;
 }
 
@@ -78,7 +62,6 @@ static void msm_vb2_buf_queue(struct vb2_buffer *vb)
 {
 	struct msm_vb2_buffer *msm_vb2;
 	struct msm_stream *stream;
-	struct msm_session *session;
 	unsigned long flags;
 	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
 
@@ -88,30 +71,21 @@ static void msm_vb2_buf_queue(struct vb2_buffer *vb)
 		return;
 	}
 
-	session = msm_get_session_from_vb2q(vb->vb2_queue);
-	if (IS_ERR_OR_NULL(session))
-		return;
-
-	read_lock(&session->stream_rwlock);
-
 	stream = msm_get_stream_from_vb2q(vb->vb2_queue);
 	if (!stream) {
 		pr_err("%s:%d] NULL stream", __func__, __LINE__);
-		read_unlock(&session->stream_rwlock);
 		return;
 	}
 
 	spin_lock_irqsave(&stream->stream_lock, flags);
 	list_add_tail(&msm_vb2->list, &stream->queued_list);
 	spin_unlock_irqrestore(&stream->stream_lock, flags);
-	read_unlock(&session->stream_rwlock);
 }
 
 static void msm_vb2_buf_finish(struct vb2_buffer *vb)
 {
 	struct msm_vb2_buffer *msm_vb2;
 	struct msm_stream *stream;
-	struct msm_session *session;
 	unsigned long flags;
 	struct msm_vb2_buffer *msm_vb2_entry, *temp;
 	struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
@@ -122,16 +96,9 @@ static void msm_vb2_buf_finish(struct vb2_buffer *vb)
 		return; 
 	}
 
-	session = msm_get_session_from_vb2q(vb->vb2_queue);
-	if (IS_ERR_OR_NULL(session))
-		return;
-
-	read_lock(&session->stream_rwlock);
-
 	stream = msm_get_stream_from_vb2q(vb->vb2_queue);
 	if (!stream) {
 		pr_err("%s:%d] NULL stream", __func__, __LINE__);
-		read_unlock(&session->stream_rwlock);
 		return;
 	}
 
@@ -144,7 +111,6 @@ static void msm_vb2_buf_finish(struct vb2_buffer *vb)
 		}
 	}
 	spin_unlock_irqrestore(&stream->stream_lock, flags);
-	read_unlock(&session->stream_rwlock);
 	return;
 }
 
@@ -152,20 +118,12 @@ static void msm_vb2_stop_stream(struct vb2_queue *q)
 {
 	struct msm_vb2_buffer *msm_vb2, *temp;
 	struct msm_stream *stream;
-	struct msm_session *session;
 	unsigned long flags;
 	struct vb2_v4l2_buffer *vb2_v4l2_buf;
-
-	session = msm_get_session_from_vb2q(q);
-	if (IS_ERR_OR_NULL(session))
-		return;
-
-	read_lock(&session->stream_rwlock);
 
 	stream = msm_get_stream_from_vb2q(q);
 	if (!stream) {
 		pr_err_ratelimited("%s:%d] NULL stream", __func__, __LINE__);
-		read_unlock(&session->stream_rwlock);
 		return;
 	}
 
@@ -185,27 +143,7 @@ static void msm_vb2_stop_stream(struct vb2_queue *q)
 			msm_vb2->in_freeq = 0;
 		}
 	spin_unlock_irqrestore(&stream->stream_lock, flags);
-	read_unlock(&session->stream_rwlock);
 }
-
-int msm_vb2_get_stream_state(struct msm_stream *stream)
-{
-	struct msm_vb2_buffer *msm_vb2, *temp;
-	unsigned long flags;
-	int rc = 1;
-
-	spin_lock_irqsave(&stream->stream_lock, flags);
-	list_for_each_entry_safe(msm_vb2, temp, &(stream->queued_list), list) {
-		if (msm_vb2->in_freeq != 0) {
-			rc = 0;
-			break;
-		}
-	}
-	spin_unlock_irqrestore(&stream->stream_lock, flags);
-	return rc;
-}
-EXPORT_SYMBOL(msm_vb2_get_stream_state);
-
 
 static struct vb2_ops msm_vb2_get_q_op = {
 	.queue_setup	= msm_vb2_queue_setup,
@@ -260,22 +198,13 @@ static struct vb2_v4l2_buffer *msm_vb2_get_buf(int session_id,
 	unsigned int stream_id)
 {
 	struct msm_stream *stream;
-	struct msm_session *session;
 	struct vb2_v4l2_buffer *vb2_v4l2_buf = NULL;
 	struct msm_vb2_buffer *msm_vb2 = NULL;
 	unsigned long flags;
 
-	session = msm_get_session(session_id);
-	if (IS_ERR_OR_NULL(session))
+	stream = msm_get_stream(session_id, stream_id);
+	if (IS_ERR_OR_NULL(stream))
 		return NULL;
-
-	read_lock(&session->stream_rwlock);
-
-	stream = msm_get_stream(session, stream_id);
-	if (IS_ERR_OR_NULL(stream)) {
-		read_unlock(&session->stream_rwlock);
-		return NULL;
-	}
 
 	spin_lock_irqsave(&stream->stream_lock, flags);
 
@@ -299,7 +228,6 @@ static struct vb2_v4l2_buffer *msm_vb2_get_buf(int session_id,
 	vb2_v4l2_buf = NULL;
 end:
 	spin_unlock_irqrestore(&stream->stream_lock, flags);
-	read_unlock(&session->stream_rwlock);
 	return vb2_v4l2_buf;
 }
 
@@ -307,23 +235,13 @@ static struct vb2_v4l2_buffer *msm_vb2_get_buf_by_idx(int session_id,
 	unsigned int stream_id, uint32_t index)
 {
 	struct msm_stream *stream;
-	struct msm_session *session;
 	struct vb2_v4l2_buffer *vb2_v4l2_buf = NULL;
 	struct msm_vb2_buffer *msm_vb2 = NULL;
 	unsigned long flags;
 
-	session = msm_get_session(session_id);
-	if (IS_ERR_OR_NULL(session))
+	stream = msm_get_stream(session_id, stream_id);
+	if (IS_ERR_OR_NULL(stream))
 		return NULL;
-
-	read_lock(&session->stream_rwlock);
-
-	stream = msm_get_stream(session, stream_id);
-
-	if (IS_ERR_OR_NULL(stream)) {
-		read_unlock(&session->stream_rwlock);
-		return NULL;
-	}
 
 	spin_lock_irqsave(&stream->stream_lock, flags);
 
@@ -345,7 +263,6 @@ static struct vb2_v4l2_buffer *msm_vb2_get_buf_by_idx(int session_id,
 	vb2_v4l2_buf = NULL;
 end:
 	spin_unlock_irqrestore(&stream->stream_lock, flags);
-	read_unlock(&session->stream_rwlock);
 	return vb2_v4l2_buf;
 }
 
@@ -353,23 +270,13 @@ static int msm_vb2_put_buf(struct vb2_v4l2_buffer *vb, int session_id,
 				unsigned int stream_id)
 {
 	struct msm_stream *stream;
-	struct msm_session *session;
 	struct msm_vb2_buffer *msm_vb2;
 	struct vb2_v4l2_buffer *vb2_v4l2_buf = NULL;
 	int rc = 0;
 	unsigned long flags;
-
-	session = msm_get_session(session_id);
-	if (IS_ERR_OR_NULL(session))
+	stream = msm_get_stream(session_id, stream_id);
+	if (IS_ERR_OR_NULL(stream))
 		return -EINVAL;
-
-	read_lock(&session->stream_rwlock);
-
-	stream = msm_get_stream(session, stream_id);
-	if (IS_ERR_OR_NULL(stream)) {
-		read_unlock(&session->stream_rwlock);
-		return -EINVAL;
-	}
 
 	spin_lock_irqsave(&stream->stream_lock, flags);
 	if (vb) {
@@ -379,10 +286,9 @@ static int msm_vb2_put_buf(struct vb2_v4l2_buffer *vb, int session_id,
 				break;
 		}
 		if (vb2_v4l2_buf != vb) {
-			pr_err("VB buffer is INVALID vb=%pK, ses_id=%d, str_id=%d\n",
+			pr_err("VB buffer is INVALID vb=%p, ses_id=%d, str_id=%d\n",
 					vb, session_id, stream_id);
 			spin_unlock_irqrestore(&stream->stream_lock, flags);
-			read_unlock(&session->stream_rwlock);
 			return -EINVAL;
 		}
 		msm_vb2 =
@@ -399,34 +305,22 @@ static int msm_vb2_put_buf(struct vb2_v4l2_buffer *vb, int session_id,
 		rc = -EINVAL;
 	}
 	spin_unlock_irqrestore(&stream->stream_lock, flags);
-	read_unlock(&session->stream_rwlock);
 	return rc;
 }
 
 static int msm_vb2_buf_done(struct vb2_v4l2_buffer *vb, int session_id,
 				unsigned int stream_id, uint32_t sequence,
-				struct timeval *ts, uint32_t reserved,
-				enum vb2_buffer_state state)
+				struct timeval *ts, uint32_t reserved)
 {
 	unsigned long flags;
 	struct msm_vb2_buffer *msm_vb2;
 	struct msm_stream *stream;
-	struct msm_session *session;
 	struct vb2_v4l2_buffer *vb2_v4l2_buf = NULL;
 	int rc = 0;
 
-	session = msm_get_session(session_id);
-	if (IS_ERR_OR_NULL(session))
+	stream = msm_get_stream(session_id, stream_id);
+	if (IS_ERR_OR_NULL(stream))
 		return -EINVAL;
-
-	read_lock(&session->stream_rwlock);
-
-	stream = msm_get_stream(session, stream_id);
-	if (IS_ERR_OR_NULL(stream)) {
-		read_unlock(&session->stream_rwlock);
-		return -EINVAL;
-	}
-
 	spin_lock_irqsave(&stream->stream_lock, flags);
 	if (vb) {
 		list_for_each_entry(msm_vb2, &(stream->queued_list), list) {
@@ -435,10 +329,9 @@ static int msm_vb2_buf_done(struct vb2_v4l2_buffer *vb, int session_id,
 				break;
 		}
 		if (vb2_v4l2_buf != vb) {
-			pr_err("VB buffer is INVALID ses_id=%d, str_id=%d, vb=%pK\n",
+			pr_err("VB buffer is INVALID ses_id=%d, str_id=%d, vb=%p\n",
 				    session_id, stream_id, vb);
 			spin_unlock_irqrestore(&stream->stream_lock, flags);
-			read_unlock(&session->stream_rwlock);
 			return -EINVAL;
 		}
 		msm_vb2 =
@@ -448,7 +341,7 @@ static int msm_vb2_buf_done(struct vb2_v4l2_buffer *vb, int session_id,
 			vb2_v4l2_buf->sequence = sequence;
 			vb2_v4l2_buf->timestamp = *ts;
 			vb2_buffer_done(&vb2_v4l2_buf->vb2_buf,
-				state);
+				VB2_BUF_STATE_DONE);
 			msm_vb2->in_freeq = 0;
 			rc = 0;
 		} else
@@ -459,7 +352,6 @@ static int msm_vb2_buf_done(struct vb2_v4l2_buffer *vb, int session_id,
 		rc = -EINVAL;
 	}
 	spin_unlock_irqrestore(&stream->stream_lock, flags);
-	read_unlock(&session->stream_rwlock);
 	return rc;
 }
 
@@ -467,23 +359,14 @@ long msm_vb2_return_buf_by_idx(int session_id, unsigned int stream_id,
 				uint32_t index)
 {
 	struct msm_stream *stream;
-	struct msm_session *session;
 	struct vb2_v4l2_buffer *vb2_v4l2_buf = NULL;
 	struct msm_vb2_buffer *msm_vb2 = NULL;
 	unsigned long flags;
 	long rc = -EINVAL;
 
-	session = msm_get_session(session_id);
-	if (IS_ERR_OR_NULL(session))
+	stream = msm_get_stream(session_id, stream_id);
+	if (IS_ERR_OR_NULL(stream))
 		return rc;
-
-	read_lock(&session->stream_rwlock);
-
-	stream = msm_get_stream(session, stream_id);
-	if (IS_ERR_OR_NULL(stream)) {
-		read_unlock(&session->stream_rwlock);
-		return -EINVAL;
-	}
 
 	spin_lock_irqsave(&stream->stream_lock, flags);
 
@@ -510,7 +393,6 @@ long msm_vb2_return_buf_by_idx(int session_id, unsigned int stream_id,
 
 end:
 	spin_unlock_irqrestore(&stream->stream_lock, flags);
-	read_unlock(&session->stream_rwlock);
 	return rc;
 }
 EXPORT_SYMBOL(msm_vb2_return_buf_by_idx);
@@ -520,21 +402,11 @@ static int msm_vb2_flush_buf(int session_id, unsigned int stream_id)
 	unsigned long flags;
 	struct msm_vb2_buffer *msm_vb2;
 	struct msm_stream *stream;
-	struct msm_session *session;
 	struct vb2_v4l2_buffer *vb2_v4l2_buf = NULL;
 
-	session = msm_get_session(session_id);
-	if (IS_ERR_OR_NULL(session))
+	stream = msm_get_stream(session_id, stream_id);
+	if (IS_ERR_OR_NULL(stream))
 		return -EINVAL;
-
-	read_lock(&session->stream_rwlock);
-
-	stream = msm_get_stream(session, stream_id);
-	if (IS_ERR_OR_NULL(stream)) {
-		read_unlock(&session->stream_rwlock);
-		return -EINVAL;
-	}
-
 	spin_lock_irqsave(&stream->stream_lock, flags);
 	list_for_each_entry(msm_vb2, &(stream->queued_list), list) {
 		vb2_v4l2_buf = &(msm_vb2->vb2_v4l2_buf);
@@ -543,7 +415,6 @@ static int msm_vb2_flush_buf(int session_id, unsigned int stream_id)
 		msm_vb2->in_freeq = 0;
 	}
 	spin_unlock_irqrestore(&stream->stream_lock, flags);
-	read_unlock(&session->stream_rwlock);
 	return 0;
 }
 

@@ -34,9 +34,6 @@
 #define MAX_NUMBER_OF_STEPS 47
 #define MAX_REGULATOR 5
 
-/*msm_flash_query_data_t query types*/
-#define FLASH_QUERY_CURRENT 1
-
 #define MSM_V4L2_PIX_FMT_META v4l2_fourcc('M', 'E', 'T', 'A') /* META */
 #define MSM_V4L2_PIX_FMT_META10 v4l2_fourcc('M', 'E', '1', '0') /* META10 */
 #define MSM_V4L2_PIX_FMT_SBGGR14 v4l2_fourcc('B', 'G', '1', '4')
@@ -86,8 +83,6 @@ enum sensor_sub_module_t {
 	SUB_MODULE_CSIPHY_3D,
 	SUB_MODULE_OIS,
 	SUB_MODULE_EXT,
-	SUB_MODULE_IR_LED,
-	SUB_MODULE_IR_CUT,
 	SUB_MODULE_MAX,
 };
 
@@ -291,21 +286,11 @@ struct msm_eeprom_info_t {
 	struct msm_eeprom_memory_map_array *mem_map_array;
 };
 
-struct msm_ir_led_cfg_data_t {
-	enum msm_ir_led_cfg_type_t cfg_type;
-	int32_t pwm_duty_on_ns;
-	int32_t pwm_period_ns;
-};
-
-struct msm_ir_cut_cfg_data_t {
-	enum msm_ir_cut_cfg_type_t cfg_type;
-};
-
 struct msm_eeprom_cfg_data {
 	enum eeprom_cfg_type_t cfgtype;
 	uint8_t is_supported;
 	union {
-		char eeprom_name[MAX_EEPROM_NAME];
+		char eeprom_name[MAX_SENSOR_NAME];
 		struct eeprom_get_t get_data;
 		struct eeprom_read_t read_data;
 		struct eeprom_write_t write_data;
@@ -345,10 +330,6 @@ enum msm_sensor_cfg_type_t {
 	CFG_WRITE_I2C_ARRAY_ASYNC,
 	CFG_WRITE_I2C_ARRAY_SYNC,
 	CFG_WRITE_I2C_ARRAY_SYNC_BLOCK,
-	/*fw update start*/
-	CFG_FW_UPDATE,
-	CFG_VCM_FW_UPDATE,
-	/*fw update end*/
 };
 
 enum msm_actuator_cfg_type_t {
@@ -375,10 +356,6 @@ enum msm_ois_cfg_type_t {
 	CFG_OIS_POWERUP,
 	CFG_OIS_CONTROL,
 	CFG_OIS_I2C_WRITE_SEQ_TABLE,
-	CFG_OIS_I2C_READ_SEQ_TABLE,
-	CFG_OIS_READ_TIMER,
-	CFG_OIS_READ_TIMER_STOP,
-	CFG_OIS_GET_GYRO,
 };
 
 enum msm_ois_cfg_download_type_t {
@@ -489,35 +466,11 @@ struct msm_ois_slave_info {
 	uint32_t i2c_addr;
 	struct msm_ois_opcode opcode;
 };
-
-struct ois_position {
-	uint8_t data0;
-	uint8_t data1;
-	uint8_t data2;
-	uint8_t data3;
-	uint8_t data4;
-	uint8_t data5;
-	uint8_t data6;
-	uint8_t data7;
-};
-
-struct msm_ois_readout {
-	int16_t ois_x_shift;
-	int16_t ois_y_shift;
-	int64_t readout_time;
-};
-struct ois_gyro {
-	uint8_t query_size;
-	struct msm_ois_readout *gyro_data;
-};
-
 struct msm_ois_cfg_data {
 	int cfgtype;
-	struct ois_position pos;
 	union {
 		struct msm_ois_set_info_t set_info;
 		struct msm_camera_i2c_seq_reg_setting *settings;
-		struct ois_gyro gyro;
 	} cfg;
 };
 
@@ -578,12 +531,6 @@ struct msm_flash_cfg_data_t {
 	} cfg;
 };
 
-struct msm_flash_query_data_t {
-	int32_t flags;
-	int32_t query_type;
-	int32_t max_avail_curr;
-};
-
 /* sensor init structures and enums */
 enum msm_sensor_init_cfg_type_t {
 	CFG_SINIT_PROBE,
@@ -638,15 +585,6 @@ struct sensor_init_cfg_data {
 
 #define VIDIOC_MSM_OIS_CFG_DOWNLOAD \
 	_IOWR('V', BASE_VIDIOC_PRIVATE + 14, struct msm_ois_cfg_download_data)
-
-#define VIDIOC_MSM_FLASH_QUERY_DATA \
-	_IOWR('V', BASE_VIDIOC_PRIVATE + 15, struct msm_flash_query_data_t)
-
-#define VIDIOC_MSM_IR_LED_CFG \
-	_IOWR('V', BASE_VIDIOC_PRIVATE + 15, struct msm_ir_led_cfg_data_t)
-
-#define VIDIOC_MSM_IR_CUT_CFG \
-	_IOWR('V', BASE_VIDIOC_PRIVATE + 15, struct msm_ir_cut_cfg_data_t)
 
 #endif
 
