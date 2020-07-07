@@ -25,15 +25,6 @@
 	static struct mutex mutexname = __MUTEX_INITIALIZER(mutexname)
 
 #define	MSM_OIS_MAX_VREGS (10)
-#define	READ_OUT_TIME 5000000 /*5ms*/
-
-DEFINE_MSM_MUTEX(ois_gyro_mutex);
-#define MAX_GYRO_QUERY_SIZE 15
-
-#define MSM_OIS_DATA_BUFFER_SIZE 15
-
-#define MAX_FAIL_CNT 3
-
 
 struct msm_ois_ctrl_t;
 
@@ -42,13 +33,6 @@ enum msm_ois_state_t {
 	OIS_OPS_ACTIVE,
 	OIS_OPS_INACTIVE,
 	OIS_DISABLE_STATE,
-};
-
-enum msm_ois_timer_state_t {
-	OIS_TIME_INIT,
-	OIS_TIME_ACTIVE,
-	OIS_TIME_INACTIVE,
-	OIS_TIME_ERROR,
 };
 
 struct msm_ois_vreg {
@@ -61,22 +45,6 @@ struct msm_ois_board_info {
 	char ois_name[MAX_OIS_NAME_SIZE];
 	uint32_t i2c_slaveaddr;
 	struct msm_ois_opcode opcode;
-};
-
-/* ois data ring buffer type */
-struct msm_ois_readout_buffer {
-	struct msm_ois_readout buffer[MSM_OIS_DATA_BUFFER_SIZE];
-	int32_t buffer_head;
-	int32_t buffer_tail;
-};
-
-struct ois_timer {
-	struct hrtimer hr_timer;
-	struct workqueue_struct *ois_wq;
-	struct work_struct g_work;
-	enum msm_ois_timer_state_t ois_timer_state;
-	struct msm_ois_ctrl_t *o_ctrl;
-	int i2c_fail_count;
 };
 
 struct msm_ois_ctrl_t {
@@ -100,7 +68,6 @@ struct msm_ois_ctrl_t {
 	struct msm_pinctrl_info pinctrl_info;
 	uint8_t cam_pinctrl_status;
 	struct msm_ois_board_info *oboard_info;
-	struct msm_ois_readout_buffer buf;
 };
 
 #endif
