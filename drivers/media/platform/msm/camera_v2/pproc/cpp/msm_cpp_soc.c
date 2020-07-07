@@ -103,11 +103,20 @@ static int cpp_get_clk_freq_tbl(struct clk *clk, struct cpp_hw_info *hw_info,
 
 int msm_cpp_set_micro_clk(struct cpp_device *cpp_dev)
 {
+	uint32_t msm_micro_iface_idx;
 	int rc;
 
-	rc = reset_control_assert(cpp_dev->micro_iface_reset);
+	msm_micro_iface_idx = msm_cpp_get_clock_index(cpp_dev,
+		"micro_iface_clk");
+	if (msm_micro_iface_idx < 0)  {
+		pr_err("Fail to get clock index\n");
+		return -EINVAL;
+	}
+
+	rc = clk_reset(cpp_dev->cpp_clk[msm_micro_iface_idx],
+		CLK_RESET_ASSERT);
 	if (rc) {
-		pr_err("%s:micro_iface_reset assert failed\n",
+		pr_err("%s:micro_iface_clk assert failed\n",
 		__func__);
 		return -EINVAL;
 	}
@@ -120,9 +129,10 @@ int msm_cpp_set_micro_clk(struct cpp_device *cpp_dev)
 	 */
 	usleep_range(1000, 1200);
 
-	rc = reset_control_deassert(cpp_dev->micro_iface_reset);
+	rc = clk_reset(cpp_dev->cpp_clk[msm_micro_iface_idx],
+		CLK_RESET_DEASSERT);
 	if (rc) {
-		pr_err("%s:micro_iface_reset de-assert failed\n", __func__);
+		pr_err("%s:micro_iface_clk de-assert failed\n", __func__);
 		return -EINVAL;
 	}
 
