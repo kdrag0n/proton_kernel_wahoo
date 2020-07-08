@@ -2023,6 +2023,7 @@ static int arm_smmu_master_configure_smrs(struct arm_smmu_device *smmu,
 			.mask	= 0, /* We don't currently share SMRs */
 			.id	= cfg->streamids[i],
 		};
+		dev_info(smmu->dev, "SARU: SMR id=%d\n", smrs[i].id);
 	}
 
 	/* It worked! Now, poke the actual hardware */
@@ -3733,10 +3734,10 @@ static int arm_smmu_device_cfg_probe(struct arm_smmu_device *smmu)
 	if (cttw_dt)
 		smmu->features |= ARM_SMMU_FEAT_COHERENT_WALK;
 	if (cttw_dt || cttw_reg)
-		dev_dbg(smmu->dev, "\t%scoherent table walk\n",
+		dev_info(smmu->dev, "\t%scoherent table walk\n",
 			   cttw_dt ? "" : "non-");
 	if (cttw_dt != cttw_reg)
-		dev_dbg(smmu->dev,
+		dev_info(smmu->dev,
 			   "\t(IDR0.CTTW overridden by dma-coherent property)\n");
 
 	if (id & ID0_SMS) {
@@ -3767,7 +3768,7 @@ static int arm_smmu_device_cfg_probe(struct arm_smmu_device *smmu)
 			}
 		}
 
-		dev_dbg(smmu->dev,
+		dev_info(smmu->dev,
 			"\tstream matching with %u register groups, mask 0x%x",
 			smmu->num_mapping_groups, mask);
 	} else {
