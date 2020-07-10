@@ -1894,7 +1894,7 @@ static struct platform_driver msm_platform_driver = {
 	},
 };
 
-static int msm_serial_enable = 0;
+static int msm_serial_enable = 1;
 static int __init cmdline_parse_console(char *str)
 {
 	if (strncmp(str, "ttyMSM", 6) == 0) {
