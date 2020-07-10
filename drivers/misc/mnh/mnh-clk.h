@@ -26,7 +26,11 @@ enum mnh_cpu_freq_type {
 	CPU_FREQ_600,
 	CPU_FREQ_800,
 	CPU_FREQ_950,
-	CPU_FREQ_MAX = CPU_FREQ_950
+	CPU_FREQ_1200,
+	CPU_FREQ_1344,
+	CPU_FREQ_1440,
+	CPU_FREQ_1536,
+	CPU_FREQ_MAX = CPU_FREQ_1536
 };
 
 enum mnh_ipu_freq_type {
