@@ -42,7 +42,7 @@
 #define APP_DMA_CHAN 1
 
 /* timeout for waiting for bootstrap MSI after hotplug */
-#define BOOTSTRAP_TIMEOUT_MS 2000
+#define BOOTSTRAP_TIMEOUT_MS 86400000
 
 /* Signaled when server sents bootstrap MSI */
 static DECLARE_COMPLETION(bootstrap_done);

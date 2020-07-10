@@ -94,10 +94,10 @@ HW_OUTx(HWIO_PCIE_SS_BASE_ADDR, PCIE_SS, reg, inst, val)
 #define SUSPEND_COMPLETE_TIMEOUT msecs_to_jiffies(5000)
 
 /* Timeout for waiting for MNH set_state to complete */
-#define STATE_CHANGE_COMPLETE_TIMEOUT msecs_to_jiffies(5000)
+#define STATE_CHANGE_COMPLETE_TIMEOUT msecs_to_jiffies(86400000)
 
 /* Timeout for MNH_HOTPLUG_IN when uart is enabled (in ms) */
-#define HOTPLUG_IN_LOOSE_TIMEOUT_MS 15000
+#define HOTPLUG_IN_LOOSE_TIMEOUT_MS 86400000
 
 /* PCIe */
 #define MNH_PCIE_CHAN_0 0
