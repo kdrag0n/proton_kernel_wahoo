@@ -92,12 +92,6 @@
 
 &reserved_memory {
 
-	easel_mem: easel_mem@95c00000 {
-		compatible = "removed-dma-pool";
-		reg = <0 0x95c00000 0 0x4000000>;
-		label = "easel_mem";
-	};
-
 	htc_reserve_region: htc_reserve_region@0 {
 		compatible = "removed-dma-pool";
 		no-map;
@@ -162,14 +156,6 @@
 		memory-region = <&htc_rtel_mem>;
 		reg-names = "rtel";
 		qcom,client-id = <0x00000001>;
-	};
-
-	qcom,ion {
-		qcom,ion-heap@30 {
-			reg = <30>;
-			memory-region = <&easel_mem>;
-			qcom,ion-heap-type = "CARVEOUT";
-		};
 	};
 
 	qcom,bcl {
