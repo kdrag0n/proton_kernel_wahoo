@@ -19,6 +19,10 @@ config MNH_SM_HOST
       download. The state manager is controlled by a userspace service
       to control state transitions.
 
+config MNH_SM_LARGE_KERNEL
+    tristate "Support for a large Easel kernel image"
+    depends on MNH_SM_HOST
+
 config MNH_THERMAL_HOST
     tristate "MNH Easel Thermal Sensor Device Host-side driver"
     depends on MNH_SM_HOST
