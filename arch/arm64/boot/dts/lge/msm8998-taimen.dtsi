@@ -54,12 +54,6 @@
 		label = "crash_fb_mem";
 	};
 
-	easel_mem: easel_mem@96000000 {
-		linux,contiguous-region;
-		reg = <0 0x96000000 0 0x4000000>;
-		label = "easel_mem";
-	};
-
 	cont_splash_mem: splash_region@9d600000 {
 		status = "disabled";
 	};
@@ -125,14 +119,6 @@
 
 	bootlog {
 		compatible = "bootlog";
-	};
-
-	qcom,ion {
-		qcom,ion-heap@30 {
-			reg = <30>;
-			memory-region = <&easel_mem>;
-			qcom,ion-heap-type = "CARVEOUT";
-		};
 	};
 
 	bootloader_log {
