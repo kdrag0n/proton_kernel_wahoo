@@ -841,7 +841,7 @@ int mnh_download_firmware(void)
 	int err;
 
 	/* Prefer to download from ION buffer if it's ready */
-	err = mnh_download_firmware_ion(mnh_sm_dev->ion);
+	err = 1;
 	if (!err) {
 		dev_dbg(mnh_sm_dev->dev,
 			"%s: ION download successful\n", __func__);
@@ -2023,9 +2023,9 @@ static int mnh_sm_open(struct inode *inode, struct file *filp)
 			/* Request firmware and stage them to carveout buf. */
 			dev_dbg(mnh_sm_dev->dev, "%s: staging firmware\n",
 				__func__);
-			mnh_ion_stage_firmware(mnh_sm_dev->ion[FW_PART_PRI]);
+			//mnh_ion_stage_firmware(mnh_sm_dev->ion[FW_PART_PRI]);
 			/* Extract firmware version from ramdisk image */
-			mnh_update_fw_version(mnh_sm_dev->ion[FW_PART_PRI]);
+			//mnh_update_fw_version(mnh_sm_dev->ion[FW_PART_PRI]);
 		}
 	}
 
