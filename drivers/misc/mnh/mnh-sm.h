@@ -19,7 +19,6 @@
 
 #include <uapi/linux/mnh-sm.h>
 #include "mnh-pcie.h"
-#include "mnh-crypto.h"
 
 /* Firmware download address */
 #define HW_MNH_DRAM_BASE		0x40000000

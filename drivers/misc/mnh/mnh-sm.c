@@ -40,7 +40,6 @@
 
 #include "hw-mnh-regs.h"
 #include "mnh-clk.h"
-#include "mnh-crypto.h"
 #include "mnh-ddr.h"
 #include "mnh-hwio.h"
 #include "mnh-hwio-bases.h"
@@ -1961,9 +1960,6 @@ static int mnh_sm_probe(struct platform_device *pdev)
 		dev_err(dev, "failed to initialize mnh-pwr (%d)\n", error);
 		goto fail_probe_1;
 	}
-
-	/* initialize mnh-crypto */
-	mnh_crypto_config_sysfs();
 
 	/* initialize mnh-clk driver */
 	error = mnh_clk_init(dev, HWIO_SCU_BASE_ADDR);
