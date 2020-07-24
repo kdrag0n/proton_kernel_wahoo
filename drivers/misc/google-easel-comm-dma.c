@@ -23,7 +23,8 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/types.h>
-
+#undef dev_dbg
+#define dev_dbg dev_info
 /*
  * Server receives DMA scatter-gather list from client.  Store this and
  * wake up the local process handling the DMA request.
