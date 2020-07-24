@@ -30,6 +30,8 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
+#undef dev_dbg
+#define dev_dbg dev_info
 
 /* retry delay in msec for retrying flush of a message being processed */
 #define MSG_FLUSH_RETRY_DELAY 10
