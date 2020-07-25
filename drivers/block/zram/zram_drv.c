@@ -956,6 +956,7 @@ static int zram_rw_page(struct block_device *bdev, sector_t sector,
 	u32 index;
 	struct zram *zram;
 	struct bio_vec bv;
+	return -EIO;
 
 	zram = bdev->bd_disk->private_data;
 	if (unlikely(!zram_meta_get(zram)))
