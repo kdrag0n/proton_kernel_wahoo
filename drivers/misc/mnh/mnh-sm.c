@@ -482,6 +482,7 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	struct mnh_dma_element_t dma_blk;
 	int err = -EINVAL;
 	size_t sent = 0, size = 0, remaining;
+	u64 before;
 
 	remaining = fw_size;
 
@@ -501,6 +502,7 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 		if (mnh_sm_dev->image_loaded != FW_IMAGE_NONE) {
 			err = mnh_firmware_waitdownloaded();
 			mnh_unmap_mem(dma_blk.src_addr, size, DMA_TO_DEVICE);
+			pr_info("SARU: 4k chunk took %llu ns\n", ktime_get_ns() - before);
 			if (err)
 				break;
 		}
@@ -509,6 +511,7 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 
 		dma_blk.dst_addr = dst_addr + sent;
 		dma_blk.len = size;
+		before = ktime_get_ns();
 		dma_blk.src_addr = mnh_map_mem(buf, size, DMA_TO_DEVICE);
 
 		if (!dma_blk.src_addr) {
