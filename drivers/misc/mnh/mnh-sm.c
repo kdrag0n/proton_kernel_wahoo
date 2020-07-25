@@ -473,6 +473,40 @@ static int mnh_transfer_firmware_contig(size_t fw_size, dma_addr_t src_addr,
 	return err;
 }
 
+/*
+ * Return a scatterlist for some page-aligned vmalloc()'ed memory
+ * block (NULL on errors).  Memory for the scatterlist is allocated
+ * using kmalloc.  The caller must free the memory.
+ */
+static struct scatterlist *videobuf_vmalloc_to_sg(unsigned char *virt,
+						  int nr_pages)
+{
+	struct scatterlist *sglist;
+	struct page *pg;
+	int i;
+
+	sglist = vzalloc(nr_pages * sizeof(*sglist));
+	if (NULL == sglist)
+		return NULL;
+	sg_init_table(sglist, nr_pages);
+	for (i = 0; i < nr_pages; i++, virt += PAGE_SIZE) {
+		pg = vmalloc_to_page(virt);
+		if (NULL == pg)
+			goto err;
+		BUG_ON(PageHighMem(pg));
+		sg_set_page(&sglist[i], pg, PAGE_SIZE, 0);
+	}
+	return sglist;
+
+err:
+	vfree(sglist);
+	return NULL;
+}
+
+extern int scatterlist_to_mnh_sg(struct scatterlist *sc_list, int count,
+	struct mnh_sg_entry *sg, size_t maxsg);
+extern struct mnh_device *mnh_dev;
+
 static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	uint64_t dst_addr)
 {
@@ -482,11 +516,43 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	struct mnh_dma_element_t dma_blk;
 	int err = -EINVAL;
 	size_t sent = 0, size = 0, remaining;
+	struct scatterlist *sgl;
+	struct mnh_sg_entry *msg;
+	size_t nents;
+	size_t maxsg;
 	u64 before;
 
 	remaining = fw_size;
 
 	mnh_sm_dev->image_loaded = FW_IMAGE_NONE;
+
+	/*
+	nents = DIV_ROUND_UP(fw_size, PAGE_SIZE);
+	maxsg = nents + 1;
+	sgl = videobuf_vmalloc_to_sg(fw_data, maxsg);
+	if (!sgl) {
+		pr_err("failed to create sgl!\n");
+		return -EINVAL;
+	}
+
+	msg = vmalloc(maxsg * sizeof(struct mnh_sg_entry));
+	if (!msg) {
+		pr_err("failed to alloc msg!\n");
+		return -ENOMEM;
+	}
+
+	err = scatterlist_to_mnh_sg(sgl, nents, msg, maxsg);
+	if (err) {
+		pr_err("failed to convert to mnh sg!\n");
+		return err;
+	}
+
+	err = dma_map_sg(&mnh_dev->pdev->dev, sgl, nents, DMA_TO_DEVICE);
+	if (err) {
+		pr_err("failed to map sg!\n");
+		return err;
+	}
+*/
 
 	/*
 	 * 1. Prepare for buffer A
