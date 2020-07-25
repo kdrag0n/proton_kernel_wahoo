@@ -90,7 +90,7 @@ struct mnh_device {
 	bool powered;
 };
 
-static struct mnh_device *mnh_dev;
+struct mnh_device *mnh_dev;
 
 static void mnh_check_pci_resources(struct pci_dev *dev, int bar);
 static uint32_t mnh_check_iatu_bar2(uint32_t offset);
@@ -722,8 +722,8 @@ int scatterlist_to_mnh_sg(struct scatterlist *sc_list, int count,
 		sg[u].paddr = sg_dma_address(in_sg);
 		sg[u].size = sg_dma_len(in_sg);
 
-		dev_dbg(&mnh_dev->pdev->dev,
-			"sg[%d] : Address %pa , length %zu\n",
+		dev_info(&mnh_dev->pdev->dev,
+			"sg[%d] : Address 0x%llx , length %u\n",
 			u, &sg[u].paddr, sg[u].size);
 #ifdef COMBINE_SG
 		if ((u > 0) && (sg[u-1].paddr + sg[u-1].size ==
@@ -743,7 +743,7 @@ int scatterlist_to_mnh_sg(struct scatterlist *sc_list, int count,
 	memset(&sg[u], 0, sizeof(sg[0]));
 	u++; /* Count of entries includes list terminator entry */
 
-	dev_dbg(&mnh_dev->pdev->dev, "SGL with %d/%d entries\n", u, i);
+	dev_info(&mnh_dev->pdev->dev, "SGL with %d/%d entries\n", u, i);
 
 	return u;
 }

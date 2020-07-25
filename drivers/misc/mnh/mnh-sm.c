@@ -374,7 +374,7 @@ static int dma_callback(uint8_t chan, enum mnh_dma_chan_dir_t dir,
 		 chan, (dir == DMA_AP2EP)?"READ(AP2EP)":"WRITE(EP2AP)",
 		 (status == DMA_DONE)?"DONE":"ABORT");
 
-	if (chan == MNH_PCIE_CHAN_0 && dir == DMA_AP2EP) {
+	if (dir == DMA_AP2EP) {
 		if (mnh_sm_dev->image_loaded == FW_IMAGE_DOWNLOADING) {
 			if (status == DMA_DONE)
 				mnh_sm_dev->image_loaded =
@@ -506,104 +506,107 @@ err:
 extern int scatterlist_to_mnh_sg(struct scatterlist *sc_list, int count,
 	struct mnh_sg_entry *sg, size_t maxsg);
 extern struct mnh_device *mnh_dev;
+#include <linux/pci.h>
+#define BAR_MAX_NUM 6
+struct mnh_device {
+	struct pci_dev	*pdev;
+	void __iomem	*pcie_config;
+	void __iomem	*config;
+	void __iomem	*ddr;
+	irq_cb_t	msg_cb;
+	irq_cb_t	vm_cb;
+	irq_dma_cb_t	dma_cb;
+	uint32_t	ring_buf_addr;
+	uint32_t	msi_num;
+	int		irq;
+	uint8_t		bar2_iatu_region; /* 0  - whole BAR2
+					1 - ROM/SRAM
+					2 - Peripheral Config */
+	uint32_t	bar_size[BAR_MAX_NUM];
+	bool powered;
+};
 
 static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	uint64_t dst_addr)
 {
-	uint32_t *buf;
-	size_t buf_size;
-	int buf_index = 0;
 	struct mnh_dma_element_t dma_blk;
-	int err = -EINVAL;
-	size_t sent = 0, size = 0, remaining;
+	int err;
 	struct scatterlist *sgl;
 	struct mnh_sg_entry *msg;
+	phys_addr_t msg_addr = 0x5f000000;
+	size_t msg_size;
 	size_t nents;
 	size_t maxsg;
 	u64 before;
 
-	remaining = fw_size;
-
 	mnh_sm_dev->image_loaded = FW_IMAGE_NONE;
 
-	/*
 	nents = DIV_ROUND_UP(fw_size, PAGE_SIZE);
 	maxsg = nents + 1;
-	sgl = videobuf_vmalloc_to_sg(fw_data, maxsg);
+	sgl = videobuf_vmalloc_to_sg((unsigned char *)fw_data, maxsg);
 	if (!sgl) {
 		pr_err("failed to create sgl!\n");
 		return -EINVAL;
 	}
 
-	msg = vmalloc(maxsg * sizeof(struct mnh_sg_entry));
+	msg_size = maxsg * sizeof(struct mnh_sg_entry);
+	msg = vzalloc(msg_size);
 	if (!msg) {
 		pr_err("failed to alloc msg!\n");
 		return -ENOMEM;
 	}
 
-	err = scatterlist_to_mnh_sg(sgl, nents, msg, maxsg);
-	if (err) {
-		pr_err("failed to convert to mnh sg!\n");
-		return err;
-	}
-
 	err = dma_map_sg(&mnh_dev->pdev->dev, sgl, nents, DMA_TO_DEVICE);
-	if (err) {
+	if (err < 0) {
 		pr_err("failed to map sg!\n");
 		return err;
 	}
-*/
 
-	/*
-	 * 1. Prepare for buffer A
-	 * 2. Wait for buffer B to complete
-	 * 3. Start transferring buffer A; repeat
-	 */
-	while (remaining > 0) {
-		buf = mnh_sm_dev->firmware_buf[buf_index];
-		buf_size = mnh_sm_dev->firmware_buf_size[buf_index];
-
-		size = MIN(remaining, buf_size);
-
-		if (mnh_sm_dev->image_loaded != FW_IMAGE_NONE) {
-			err = mnh_firmware_waitdownloaded();
-			mnh_unmap_mem(dma_blk.src_addr, size, DMA_TO_DEVICE);
-			pr_info("SARU: 4k chunk took %llu ns\n", ktime_get_ns() - before);
-			if (err)
-				break;
-		}
-
-		memcpy(buf, fw_data + sent, size);
-
-		dma_blk.dst_addr = dst_addr + sent;
-		dma_blk.len = size;
-		before = ktime_get_ns();
-		dma_blk.src_addr = mnh_map_mem(buf, size, DMA_TO_DEVICE);
-
-		if (!dma_blk.src_addr) {
-			dev_err(mnh_sm_dev->dev,
-				"Could not map dma buffer for FW download\n");
-			return -ENOMEM;
-		}
-
-		dev_dbg(mnh_sm_dev->dev, "FW download - AP(:0x%llx) to EP(:0x%llx), size(%d)\n",
-			 dma_blk.src_addr, dma_blk.dst_addr, dma_blk.len);
-
-		mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
-		reinit_completion(&mnh_sm_dev->dma_complete);
-		mnh_dma_sblk_start(MNH_PCIE_CHAN_0, DMA_AP2EP, &dma_blk);
-
-		sent += size;
-		remaining -= size;
-		buf_index = 0;//(buf_index + 1) & 0x1;
-		dev_dbg(mnh_sm_dev->dev, "Sent:%zd, Remaining:%zd\n",
-			 sent, remaining);
+	err = scatterlist_to_mnh_sg(sgl, nents, msg, maxsg);
+	if (err < 0) {
+		pr_err("failed to convert to mnh sg! err=%d\n", err);
+		return err;
 	}
 
-	if (mnh_sm_dev->image_loaded != FW_IMAGE_NONE) {
-		err = mnh_firmware_waitdownloaded();
-		mnh_unmap_mem(dma_blk.src_addr, size, DMA_TO_DEVICE);
+	err = mnh_sg_verify(msg, msg_size, NULL);
+	if (err) {
+		pr_err("failed to verify mnh sg! err=%d\n", err);
+		return err;
 	}
+
+	/* Use single-block DMA to transfer the MNH scatter-gather list */
+	dma_blk.dst_addr = msg_addr;
+	dma_blk.src_addr = mnh_map_mem(&msg, msg_size, DMA_TO_DEVICE);
+	dma_blk.len = msg_size;
+	dev_dbg(mnh_sm_dev->dev, "MNH SGL download - AP(:0x%llx) to EP(:0x%llx), size(%d)\n",
+			dma_blk.src_addr, dma_blk.dst_addr, dma_blk.len);
+	mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
+	reinit_completion(&mnh_sm_dev->dma_complete);
+	mnh_dma_sblk_start(MNH_PCIE_CHAN_0, DMA_AP2EP, &dma_blk);
+
+	err = mnh_firmware_waitdownloaded();
+	mnh_unmap_mem((dma_addr_t)&msg, msg_size, DMA_TO_DEVICE);
+	if (err) {
+		pr_err("failed to sblk_dma msg!\n");
+		return err;
+	}
+
+	/* Finally, perform multi-block DMA to copy the firmware */
+	dev_dbg(mnh_sm_dev->dev, "FW download - AP(:0x%llx) to EP(:0x%llx), size(%d)\n",
+			fw_data, dst_addr, fw_size);
+	mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
+	reinit_completion(&mnh_sm_dev->dma_complete);
+	before = ktime_get_ns();
+	mnh_dma_mblk_start(MNH_PCIE_CHAN_0, DMA_AP2EP, &msg_addr);
+
+	/* Wait */
+	err = mnh_firmware_waitdownloaded();
+	pr_info("DONE! err=%d, %llu ns\n", err, ktime_get_ns() - before);
+
+	/* Clean up */
+	dma_unmap_sg(&mnh_dev->pdev->dev, sgl, nents, DMA_TO_DEVICE);
+	vfree(msg);
+	vfree(sgl);
 
 	return err;
 }
