@@ -474,6 +474,25 @@ dma_addr_t mnh_map_mem(
 void mnh_unmap_mem(
         dma_addr_t dma_addr, size_t size, enum dma_data_direction direction);
 
+/**
+ * Map scattered host memory for access by MNH PCIe host
+ * @param[in] sglist scatterlist describing the memory to map
+ * @param[in] nents number of entries in the scatterlist
+ * @param[in] direction DMA direction DMA_TO_DEVICE, etc.
+ * @return number of entries mapped, or zero for error
+ */
+int mnh_map_sg(struct scatterlist *sglist, size_t nents,
+	enum dma_data_direction direction);
+
+/**
+ * Unmap scattered host memory from MNH PCIe host access
+ * @param[in] sglist scatterlist describing the memory to map
+ * @param[in] nents number of entries in the scatterlist
+ * @param[in] direction DMA direction DMA_TO_DEVICE, etc.
+ */
+void mnh_unmap_sg(struct scatterlist *sglist, size_t nents,
+	enum dma_data_direction direction);
+
 int mnh_pci_suspend(struct pci_dev *pdev);
 int mnh_pci_resume(struct pci_dev *pdev);
 #endif /* __MNH_PCIE_HOST */

@@ -141,6 +141,33 @@ void mnh_unmap_mem(
 EXPORT_SYMBOL(mnh_unmap_mem);
 
 /**
+ * Map scattered host memory for access by MNH PCIe host
+ * @param[in] sglist scatterlist describing the memory to map
+ * @param[in] nents number of entries in the scatterlist
+ * @param[in] direction DMA direction DMA_TO_DEVICE, etc.
+ * @return number of entries mapped, or zero for error
+ */
+int mnh_map_sg(struct scatterlist *sglist, size_t nents,
+	enum dma_data_direction direction)
+{
+	return dma_map_sg(&mnh_dev->pdev->dev, sglist, nents, direction);
+}
+EXPORT_SYMBOL(mnh_map_sg);
+
+/**
+ * Unmap scattered host memory from MNH PCIe host access
+ * @param[in] sglist scatterlist describing the memory to map
+ * @param[in] nents number of entries in the scatterlist
+ * @param[in] direction DMA direction DMA_TO_DEVICE, etc.
+ */
+void mnh_unmap_sg(struct scatterlist *sglist, size_t nents,
+	enum dma_data_direction direction)
+{
+	dma_unmap_sg(&mnh_dev->pdev->dev, sglist, nents, direction);
+}
+EXPORT_SYMBOL(mnh_unmap_sg);
+
+/**
  * API to read data from PCIE configuration space
  * @param[in] offset  offset into PCIE configuration space(BAR0)
  * @param[in] len     buffer size : supported size is 4
