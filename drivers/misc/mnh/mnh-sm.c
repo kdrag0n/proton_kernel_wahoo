@@ -182,6 +182,9 @@ struct mnh_sm_device {
 	/* completion used for synchronizing with secondary bootloader */
 	struct completion suspend_complete;
 
+	/* completion for dma request callbacks */
+	struct completion dma_complete;
+
 	/* size of the SBL, PBL copies it from DDR to SRAM */
 	uint32_t sbl_size;
 
@@ -377,6 +380,8 @@ static int dma_callback(uint8_t chan, enum mnh_dma_chan_dir_t dir,
 				mnh_sm_dev->image_loaded =
 				    FW_IMAGE_DOWNLOAD_FAIL;
 		}
+
+		complete(&mnh_sm_dev->dma_complete);
 	} else {
 		dev_err(mnh_sm_dev->dev, "DMA_CALLBACK: incorrect channel and direction");
 		return -EINVAL;
@@ -387,21 +392,22 @@ static int dma_callback(uint8_t chan, enum mnh_dma_chan_dir_t dir,
 
 static int mnh_firmware_waitdownloaded(void)
 {
-	unsigned long timeout = jiffies + PCIE_FIRMWARE_DOWNLOAD_TIMEOUT;
+	if (!wait_for_completion_timeout(&mnh_sm_dev->dma_complete,
+			PCIE_FIRMWARE_DOWNLOAD_TIMEOUT)) {
+		dev_err(mnh_sm_dev->dev, "Fail to Download Firmware, timeout!!\n");
+		return -ETIMEDOUT;
+	}
 
-	do {
-		if (mnh_sm_dev->image_loaded == FW_IMAGE_DOWNLOAD_SUCCESS) {
-			dev_dbg(mnh_sm_dev->dev, "Firmware loaded!\n");
-			return 0;
-		} else if (mnh_sm_dev->image_loaded == FW_IMAGE_DOWNLOAD_FAIL) {
-			dev_err(mnh_sm_dev->dev, "Firmware load fail!\n");
-			return -EIO;
-		}
-		usleep_range(2000, 5000);
-	} while (time_before(jiffies, timeout));
-
-	dev_err(mnh_sm_dev->dev, "Fail to Download Firmware, timeout!!\n");
-	return -EIO;
+	switch (mnh_sm_dev->image_loaded) {
+	case FW_IMAGE_DOWNLOAD_SUCCESS:
+		dev_dbg(mnh_sm_dev->dev, "Firmware loaded!\n");
+		return 0;
+	case FW_IMAGE_DOWNLOAD_FAIL:
+                dev_err(mnh_sm_dev->dev, "Firmware load fail!\n");
+		/* fallthrough */
+	default:
+		return -EIO;
+	}
 }
 
 /**
@@ -456,6 +462,7 @@ static int mnh_transfer_firmware_contig(size_t fw_size, dma_addr_t src_addr,
 		dma_blk.src_addr, dma_blk.dst_addr, dma_blk.len);
 
 	mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
+	reinit_completion(&mnh_sm_dev->dma_complete);
 	mnh_dma_sblk_start(MNH_PCIE_CHAN_0, DMA_AP2EP, &dma_blk);
 
 	err = mnh_firmware_waitdownloaded();
@@ -511,6 +518,7 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 			 dma_blk.src_addr, dma_blk.dst_addr, dma_blk.len);
 
 		mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
+		reinit_completion(&mnh_sm_dev->dma_complete);
 		mnh_dma_sblk_start(MNH_PCIE_CHAN_0, DMA_AP2EP, &dma_blk);
 
 		sent += size;
@@ -2354,6 +2362,7 @@ static int mnh_sm_probe(struct platform_device *pdev)
 	init_completion(&mnh_sm_dev->powered_complete);
 	init_completion(&mnh_sm_dev->work_complete);
 	init_completion(&mnh_sm_dev->suspend_complete);
+	init_completion(&mnh_sm_dev->dma_complete);
 
 	/* Allocate ion buffer structures */
 	for (i = 0; i < FW_PART_MAX; i++) {
