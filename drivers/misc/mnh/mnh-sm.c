@@ -426,7 +426,7 @@ static int mnh_firmware_waitdownloaded(void)
  */
 static size_t mnh_alloc_firmware_buf(struct device *dev, uint32_t **buf)
 {
-	size_t size = IMG_DOWNLOAD_MAX_SIZE;
+	size_t size = 4096;
 
 	while (size > 0) {
 		*buf = devm_kmalloc(dev, size, GFP_KERNEL | __GFP_NOWARN);
