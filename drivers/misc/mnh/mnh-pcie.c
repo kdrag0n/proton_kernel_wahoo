@@ -666,6 +666,7 @@ int mnh_dma_sblk_start(uint8_t chan, enum mnh_dma_chan_dir_t dir,
 	uint32_t data = 0;
 	uint8_t size = sizeof(data);
 
+	u64 before = ktime_get_ns();
 	if (dir == DMA_EP2AP) { /* write */
 		dev_dbg(&mnh_dev->pdev->dev, "DMA WRITE[EP2AP]: CH%d\n", chan);
 		data = DMA_WRITE_ENGINE_EN_OFF_MASK_ENABLE;
@@ -696,6 +697,7 @@ int mnh_dma_sblk_start(uint8_t chan, enum mnh_dma_chan_dir_t dir,
 	mnh_pcie_config_write(DMA_DAR_LOW_OFF, size, data);
 	data = UPPER(blk->dst_addr);
 	mnh_pcie_config_write(DMA_DAR_HIGH_OFF, size, data);
+	pr_info("SARU: cfg took %llu\n", ktime_get_ns() - before);
 
 	if (dir == DMA_EP2AP) { /* write */
 		data = DMA_WRITE_DOORBELL_OFF_MASK_CH_NUM & chan;
@@ -724,7 +726,7 @@ static enum dma_data_direction mnh_to_dma_dir(enum mnh_dma_chan_dir_t mnh_dir)
  * @return a count of sg entries used on success
  *         -EINVAL if exceeding maxsg
  */
-static int scatterlist_to_mnh_sg(struct scatterlist *sc_list, int count,
+int scatterlist_to_mnh_sg(struct scatterlist *sc_list, int count,
 	struct mnh_sg_entry *sg, size_t maxsg)
 {
 	struct scatterlist *in_sg;
