@@ -30,7 +30,7 @@
 #define HW_MNH_DT_DOWNLOAD		0x40880000
 #define HW_MNH_RAMDISK_DOWNLOAD		0x40890000
 /* Firmware download related definitions */
-#define IMG_DOWNLOAD_MAX_SIZE		(4000 * 1024)
+#define IMG_DOWNLOAD_MAX_SIZE		SZ_4M
 #define FIP_IMG_SBL_SIZE_OFFSET		0x28
 #define FIP_IMG_SBL_ADDR_OFFSET		0x20
 
