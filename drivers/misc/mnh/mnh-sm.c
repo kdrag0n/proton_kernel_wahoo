@@ -526,7 +526,7 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 
 		sent += size;
 		remaining -= size;
-		buf_index = (buf_index + 1) & 0x1;
+		buf_index = 0;//(buf_index + 1) & 0x1;
 		dev_dbg(mnh_sm_dev->dev, "Sent:%zd, Remaining:%zd\n",
 			 sent, remaining);
 	}
