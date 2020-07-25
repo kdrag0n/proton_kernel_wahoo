@@ -498,14 +498,14 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 
 		size = MIN(remaining, buf_size);
 
-		memcpy(buf, fw_data + sent, size);
-
 		if (mnh_sm_dev->image_loaded != FW_IMAGE_NONE) {
 			err = mnh_firmware_waitdownloaded();
 			mnh_unmap_mem(dma_blk.src_addr, size, DMA_TO_DEVICE);
 			if (err)
 				break;
 		}
+
+		memcpy(buf, fw_data + sent, size);
 
 		dma_blk.dst_addr = dst_addr + sent;
 		dma_blk.len = size;
