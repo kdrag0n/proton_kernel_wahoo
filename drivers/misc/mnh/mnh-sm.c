@@ -53,6 +53,9 @@
 #include "mnh-pwr.h"
 #include "mnh-sm.h"
 
+#undef dev_dbg
+#define dev_dbg dev_info
+
 #define MNH_SCU_INf(reg, fld) \
 HW_INf(HWIO_SCU_BASE_ADDR, SCU, reg, fld)
 #define MNH_SCU_INx(reg, inst) \
