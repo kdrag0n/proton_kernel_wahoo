@@ -856,6 +856,7 @@ static void __zram_make_request(struct zram *zram, struct bio *bio)
 	u32 index;
 	struct bio_vec bvec;
 	struct bvec_iter iter;
+	int seg_idx = 0;
 
 	index = bio->bi_iter.bi_sector >> SECTORS_PER_PAGE_SHIFT;
 	offset = (bio->bi_iter.bi_sector &
@@ -870,6 +871,8 @@ static void __zram_make_request(struct zram *zram, struct bio *bio)
 	rw = bio_data_dir(bio);
 	bio_for_each_segment(bvec, bio, iter) {
 		int max_transfer_size = PAGE_SIZE - offset;
+
+		pr_info("SARU: zram: [req] %s len=%d offset=%d seg_idx=%d\n", rw == READ ? "READ" : "WRITE", bvec.bv_len, bvec.bv_offset, ++seg_idx);
 
 		if (bvec.bv_len > max_transfer_size) {
 			/*
@@ -970,6 +973,8 @@ static int zram_rw_page(struct block_device *bdev, sector_t sector,
 	bv.bv_page = page;
 	bv.bv_len = PAGE_SIZE;
 	bv.bv_offset = 0;
+
+	pr_info("SARU: zram: [rwp] %s len=%d offset=%d\n", rw == READ ? "READ" : "WRITE", bv.bv_len, bv.bv_offset);
 
 	err = zram_bvec_rw(zram, &bv, index, offset, rw);
 put_zram:
