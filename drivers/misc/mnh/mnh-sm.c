@@ -1860,11 +1860,13 @@ static int mnh_sm_set_state_locked(int state)
 
 #if ALLOW_PARTIAL_ACTIVE
 		/* treat as boot error if should throttle */
+		/*
 		if (!mnh_pwr_is_vbat_okay()) {
 			dev_warn(mnh_sm_dev->dev, "enter partial active\n");
 			ret = -EIO;
 			break;
 		}
+		*/
 #endif
 
 		/* make sure ddr is configured */
