@@ -520,7 +520,8 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	struct mnh_sg_entry *msg;
 	size_t nents;
 	size_t maxsg;
-	u64 before;
+	u64 before_memcpy;
+	u64 before_dma;
 
 	remaining = fw_size;
 
@@ -564,20 +565,20 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 		buf_size = mnh_sm_dev->firmware_buf_size[buf_index];
 
 		size = MIN(remaining, buf_size);
+		before_memcpy = ktime_get_ns();
+		memcpy(buf, fw_data + sent, size);
+		pr_info("SARU: memcpy took %llu ns\n", ktime_get_ns() - before_memcpy);
 
 		if (mnh_sm_dev->image_loaded != FW_IMAGE_NONE) {
 			err = mnh_firmware_waitdownloaded();
 			mnh_unmap_mem(dma_blk.src_addr, size, DMA_TO_DEVICE);
-			pr_info("SARU: 4k chunk took %llu ns\n", ktime_get_ns() - before);
+			pr_info("SARU: 4k chunk took %llu ns\n", ktime_get_ns() - before_dma);
 			if (err)
 				break;
 		}
 
-		memcpy(buf, fw_data + sent, size);
-
 		dma_blk.dst_addr = dst_addr + sent;
 		dma_blk.len = size;
-		before = ktime_get_ns();
 		dma_blk.src_addr = mnh_map_mem(buf, size, DMA_TO_DEVICE);
 
 		if (!dma_blk.src_addr) {
@@ -591,6 +592,7 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 
 		mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
 		reinit_completion(&mnh_sm_dev->dma_complete);
+		before_dma = ktime_get_ns();
 		mnh_dma_sblk_start(MNH_PCIE_CHAN_0, DMA_AP2EP, &dma_blk);
 
 		sent += size;
