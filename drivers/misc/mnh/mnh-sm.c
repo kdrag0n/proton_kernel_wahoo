@@ -1550,7 +1550,7 @@ static int mnh_sm_download(void)
 	start = ktime_get();
 	ret = mnh_download_firmware();
 	end = ktime_get();
-	dev_dbg(mnh_sm_dev->dev, "iter:%d took %d ms to download firmware\n",
+	dev_info(mnh_sm_dev->dev, "iter:%d took %d ms to download firmware\n",
 		 iter, (unsigned)ktime_to_ms(ktime_sub(end, start)));
 
 	if (ret) {
