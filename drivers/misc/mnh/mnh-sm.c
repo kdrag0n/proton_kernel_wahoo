@@ -526,7 +526,7 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 {
 	struct mnh_dma_element_t dma_blk;
 	int err;
-	struct scatterlist *src_sgl;
+	struct scatterlist src_sgl;
 	struct mnh_sg_entry *src_msg;
 	struct mnh_sg_entry *dst_msg;
 	struct mnh_dma_ll *mnh_ll;
@@ -538,12 +538,8 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 
 	mnh_sm_dev->image_loaded = FW_IMAGE_NONE;
 
-	nents = DIV_ROUND_UP(fw_size, PAGE_SIZE);
-	src_sgl = videobuf_vmalloc_to_sg((unsigned char *)fw_data, nents);
-	if (!src_sgl) {
-		pr_err("failed to create src_sgl!\n");
-		return -EINVAL;
-	}
+	nents = 1;
+	sg_init_one(&src_sgl, fw_data, fw_size);
 
 	maxsg = nents + 1;
 	msg_size = maxsg * sizeof(*src_msg);
@@ -553,13 +549,13 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 		return -ENOMEM;
 	}
 
-	err = mnh_map_sg(src_sgl, nents, DMA_TO_DEVICE);
+	err = mnh_map_sg(&src_sgl, nents, DMA_TO_DEVICE);
 	if (err < 0) {
 		pr_err("failed to map sg!\n");
 		return err;
 	}
 
-	err = scatterlist_to_mnh_sg(src_sgl, nents, src_msg, maxsg);
+	err = scatterlist_to_mnh_sg(&src_sgl, nents, src_msg, maxsg);
 	if (err < 0) {
 		pr_err("failed to convert to mnh sg! err=%d\n", err);
 		return err;
@@ -629,10 +625,9 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	pr_info("DONE! err=%d, %llu ns\n", err, ktime_get_ns() - before);
 
 	/* Clean up */
-	mnh_unmap_sg(src_sgl, nents, DMA_TO_DEVICE);
+	mnh_unmap_sg(&src_sgl, nents, DMA_TO_DEVICE);
 	vfree(src_msg);
 	vfree(dst_msg);
-	vfree(src_sgl);
 	mnh_ll_destroy(mnh_ll);
 	kfree(mnh_ll);
 
@@ -797,6 +792,8 @@ int mnh_download_firmware_ion(struct mnh_ion *ion[FW_PART_MAX])
 	return 0;
 }
 
+extern bool use_shared_buf;
+
 int mnh_download_firmware_legacy(void)
 {
 	const struct firmware *dt_img, *kernel_img, *ram_img;
@@ -815,30 +812,7 @@ int mnh_download_firmware_legacy(void)
 		return err;
 	}
 
-	err = request_firmware(&fip_img, "easel/fip.bin", mnh_sm_dev->dev);
-	if (err) {
-		dev_err(mnh_sm_dev->dev, "request fip_image failed - %d\n",
-			err);
-		return -EIO;
-	}
-
-	err = request_firmware(&kernel_img, "easel/Image", mnh_sm_dev->dev);
-	if (err) {
-		dev_err(mnh_sm_dev->dev, "request kernel failed - %d\n", err);
-		goto free_fip;
-	}
-
-	err = request_firmware(&dt_img, "easel/mnh.dtb", mnh_sm_dev->dev);
-	if (err) {
-		dev_err(mnh_sm_dev->dev, "request kernel failed - %d\n", err);
-		goto free_kernel;
-	}
-
-	err = request_firmware(&ram_img, "easel/ramdisk.img", mnh_sm_dev->dev);
-	if (err) {
-		dev_err(mnh_sm_dev->dev, "request kernel failed - %d\n", err);
-		goto free_dt;
-	}
+	use_shared_buf = true;
 
 	/* get double buffers for transferring firmware */
 	for (i = 0; i < 2; i++) {
@@ -856,6 +830,13 @@ int mnh_download_firmware_legacy(void)
 			__func__, i, mnh_sm_dev->firmware_buf_size[i]);
 	}
 
+	err = request_firmware(&fip_img, "easel/fip.bin", mnh_sm_dev->dev);
+	if (err) {
+		dev_err(mnh_sm_dev->dev, "request fip_image failed - %d\n",
+			err);
+		return -EIO;
+	}
+
 	/* DMA transfer for SBL */
 	memcpy(&size, (uint8_t *)(fip_img->data + FIP_IMG_SBL_SIZE_OFFSET),
 		sizeof(size));
@@ -869,25 +850,47 @@ int mnh_download_firmware_legacy(void)
 			HW_MNH_SBL_DOWNLOAD))
 		goto fail_downloading;
 
+	err = request_firmware(&dt_img, "easel/mnh.dtb", mnh_sm_dev->dev);
+	if (err) {
+		dev_err(mnh_sm_dev->dev, "request kernel failed - %d\n", err);
+		goto free_kernel;
+	}
+
 	/* DMA transfer for device tree */
 	dev_dbg(mnh_sm_dev->dev, "DOWNLOADING DT...size:%zd\n", dt_img->size);
 	if (mnh_transfer_firmware(dt_img->size, dt_img->data,
 			HW_MNH_DT_DOWNLOAD))
 		goto fail_downloading;
 
-	/* DMA transfer for ramdisk */
+/*
+	err = request_firmware(&ram_img, "easel/ramdisk.img", mnh_sm_dev->dev);
+	if (err) {
+		dev_err(mnh_sm_dev->dev, "request kernel failed - %d\n", err);
+		goto free_dt;
+	}
+
+	/* DMA transfer for ramdisk *//*
 	dev_dbg(mnh_sm_dev->dev, "DOWNLOADING RAMDISK...size:%zd\n",
 		 ram_img->size);
 	if (mnh_transfer_firmware(ram_img->size, ram_img->data,
 			HW_MNH_RAMDISK_DOWNLOAD))
 		goto fail_downloading;
+*/
 
-	/* DMA transfer for Kernel image */
+/*
+	err = request_firmware(&kernel_img, "easel/Image", mnh_sm_dev->dev);
+	if (err) {
+		dev_err(mnh_sm_dev->dev, "request kernel failed - %d\n", err);
+		goto free_fip;
+	}
+
+	/* DMA transfer for Kernel image *//*
 	dev_dbg(mnh_sm_dev->dev, "DOWNLOADING KERNEL...size:%zd\n",
 		 kernel_img->size);
 	if (mnh_transfer_firmware(kernel_img->size, kernel_img->data,
 			HW_MNH_KERNEL_DOWNLOAD))
 		goto fail_downloading;
+*/
 
 	/* Configure sbl addresses and size */
 	mnh_config_write(HW_MNH_PCIE_CLUSTER_ADDR_OFFSET + HW_MNH_PCIE_GP_4, 4,
@@ -912,10 +915,7 @@ int mnh_download_firmware_legacy(void)
 		mnh_sm_dev->firmware_buf[i] = NULL;
 	}
 
-	release_firmware(fip_img);
-	release_firmware(kernel_img);
-	release_firmware(dt_img);
-	release_firmware(ram_img);
+	use_shared_buf = false;
 
 	/* Unregister DMA callback */
 	mnh_reg_irq_callback(NULL, NULL, NULL);
