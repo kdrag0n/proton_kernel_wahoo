@@ -410,6 +410,9 @@ static int mnh_firmware_waitdownloaded(void)
 	}
 }
 
+/* Flags to avoid spending too much time on allocations */
+#define GFP_DMABUF	(__GFP_NOWARN | __GFP_DIRECT_RECLAIM | __GFP_NORETRY)
+
 /**
  * mnh_alloc_firmware_buf - Allocate temporary kernel buffer for mnh firmware
  *
@@ -426,12 +429,16 @@ static size_t mnh_alloc_firmware_buf(struct device *dev, uint32_t **buf)
 	size_t size = IMG_DOWNLOAD_MAX_SIZE;
 
 	while (size > 0) {
-		*buf = devm_kmalloc(dev, size, GFP_KERNEL | __GFP_NOWARN);
+		*buf = devm_kmalloc(dev, size, GFP_DMABUF);
 		if (*buf)
 			break;
 
 		size >>= 1;
 	}
+
+	/* Allow expensive reclaim mechanisms as a last resort */
+	if (!*buf)
+		*buf = devm_kmalloc(dev, size, GFP_KERNEL);
 
 	return size;
 }
