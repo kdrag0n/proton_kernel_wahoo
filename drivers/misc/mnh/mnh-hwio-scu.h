@@ -91,8 +91,6 @@
 #define HWIO_SCU_GPS_GPS_FLDMASK (0xffffffff)
 #define HWIO_SCU_GPS_GPS_FLDSHFT (0)
 
-#define MNH_BOOT_STAT  (HWIO_SCU_GPS_ADDR(HWIO_SCU_BASE_ADDR, 0))
-
 /* General Purpose Scratchpad */
 /*
  * Allocation:
