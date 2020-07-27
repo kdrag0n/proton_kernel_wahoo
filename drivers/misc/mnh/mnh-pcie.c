@@ -167,6 +167,139 @@ void mnh_unmap_sg(struct scatterlist *sglist, size_t nents,
 }
 EXPORT_SYMBOL(mnh_unmap_sg);
 
+int mnh_ll_build(struct mnh_sg_entry *src_sg,
+		struct mnh_sg_entry *dst_sg, struct mnh_dma_ll *ll)
+{
+	struct mnh_dma_ll_element *ll_element, *tmp_element;
+	struct mnh_sg_entry sg_dst, sg_src;
+	dma_addr_t dma;
+	int i, s, u;
+
+	ll_element = mnh_alloc_coherent(DMA_LL_LENGTH * sizeof(struct mnh_dma_ll_element),
+					&dma);
+	ll->size = 0;
+	ll->ll_element[0] = ll_element;
+	ll->dma[0] = dma;
+	if (!ll_element) {
+		dev_err(&mnh_dev->pdev->dev, "LL alloc failed \n");
+		return -EINVAL;
+		}
+	i = 0;
+	s = 0;
+	u = 0;
+	sg_src = src_sg[i];
+	sg_dst = dst_sg[s];
+	dev_dbg(&mnh_dev->pdev->dev, "LL checkpoint 2\n");
+	if ((sg_src.paddr == 0x0) || (sg_dst.paddr == 0x0)) {
+		dev_err(&mnh_dev->pdev->dev, "Input lists invalid\n");
+		return -EINVAL;
+	}
+	while ((sg_src.paddr != 0x0) && (sg_dst.paddr != 0x0)) {
+		if (sg_src.size == sg_dst.size) {
+			ll_element[u].header = LL_DATA_ELEMENT;
+			ll_element[u].size = sg_src.size;
+			ll_element[u].sar_low = LOWER(sg_src.paddr);
+			ll_element[u].sar_high = UPPER(sg_src.paddr);
+			ll_element[u].dar_low = LOWER(sg_dst.paddr);
+			ll_element[u].dar_high = UPPER(sg_dst.paddr);
+			i++;
+			s++;
+			sg_src = src_sg[i];
+			sg_dst = dst_sg[s];
+		} else if (sg_src.size > sg_dst.size) {
+			ll_element[u].header = LL_DATA_ELEMENT;
+			ll_element[u].size = sg_dst.size;
+			ll_element[u].sar_low = LOWER(sg_src.paddr);
+			ll_element[u].sar_high = UPPER(sg_src.paddr);
+			ll_element[u].dar_low = LOWER(sg_dst.paddr);
+			ll_element[u].dar_high = UPPER(sg_dst.paddr);
+			sg_src.paddr = sg_src.paddr + sg_dst.size;
+			sg_src.size = sg_src.size - sg_dst.size;
+			s++;
+			sg_dst = dst_sg[s];
+		} else {
+			ll_element[u].header = LL_DATA_ELEMENT;
+			ll_element[u].size = sg_src.size;
+			ll_element[u].sar_low = LOWER(sg_src.paddr);
+			ll_element[u].sar_high = UPPER(sg_src.paddr);
+			ll_element[u].dar_low = LOWER(sg_dst.paddr);
+			ll_element[u].dar_high = UPPER(sg_dst.paddr);
+			sg_dst.paddr = sg_dst.paddr + sg_src.size;
+			sg_dst.size = sg_dst.size - sg_src.size;
+			i++;
+			sg_src = src_sg[i];
+		}
+		u++;
+		if (u == DMA_LL_LENGTH -1) {
+			ll_element[u].header = LL_LINK_ELEMENT;
+			if ((sg_src.paddr == 0x0) || (sg_dst.paddr == 0x0)) {
+				ll_element[u-1].header = LL_IRQ_DATA_ELEMENT;
+				ll_element[u].header = LL_LAST_LINK_ELEMENT;
+				ll_element[u].sar_low =
+					LOWER((uint64_t) ll->dma[0]);
+				ll_element[u].sar_high =
+					UPPER((uint64_t) ll->dma[0]);
+				return 0;
+			}
+			if (ll->size >= (MNH_MAX_LL_ELEMENT-1)) {
+				dev_err(&mnh_dev->pdev->dev, "Out of dma elements\n");
+				ll_element[u-1].header = LL_IRQ_DATA_ELEMENT;
+				ll_element[u].header = LL_LAST_LINK_ELEMENT;
+				ll_element[u].sar_low =
+					LOWER((uint64_t) ll->dma[0]);
+				ll_element[u].sar_high =
+					UPPER((uint64_t) ll->dma[0]);
+				mnh_ll_destroy(ll);
+				return -EINVAL;
+			}
+			pr_err("allocating more ram!!!!!!!!!!!!!!!!!\n");
+			return -EINVAL;
+			tmp_element = dma_alloc_coherent(&mnh_dev->pdev->dev,
+			DMA_LL_LENGTH * sizeof(struct mnh_dma_ll_element),
+				&dma, GFP_KERNEL);
+			if (!tmp_element) {
+				dev_err(&mnh_dev->pdev->dev, "Element allcation failed\n");
+				ll_element[u-1].header = LL_IRQ_DATA_ELEMENT;
+				ll_element[u].header = LL_LAST_LINK_ELEMENT;
+				ll_element[u].sar_low =
+					LOWER((uint64_t) ll->dma[0]);
+				ll_element[u].sar_high =
+					UPPER((uint64_t) ll->dma[0]);
+				mnh_ll_destroy(ll);
+				return -EINVAL;
+			}
+			ll_element[u].sar_low =
+				LOWER((uint64_t) dma);
+			ll_element[u].sar_high =
+				UPPER((uint64_t) dma);
+			ll_element = tmp_element;
+			u = 0;
+			ll->size++;
+			ll->ll_element[ll->size] = ll_element;
+			ll->dma[ll->size] = dma;
+		}
+	}
+	ll_element[u-1].header = LL_IRQ_DATA_ELEMENT;
+	ll_element[u].header = LL_LAST_LINK_ELEMENT;
+	ll_element[u].sar_low = LOWER((uint64_t) ll->dma[0]);
+	ll_element[u].sar_high = UPPER((uint64_t) ll->dma[0]);
+	return 0;
+}
+
+int mnh_ll_destroy(struct mnh_dma_ll *ll)
+{
+	int i;
+
+	i = 0;
+	while (i <= ll->size) {
+		mnh_free_coherent(DMA_LL_LENGTH
+			* sizeof(struct mnh_dma_ll_element),
+			ll->ll_element[i], ll->dma[i]);
+		i++;
+	}
+	return 0;
+}
+
 /**
  * API to read data from PCIE configuration space
  * @param[in] offset  offset into PCIE configuration space(BAR0)
@@ -749,9 +882,9 @@ int scatterlist_to_mnh_sg(struct scatterlist *sc_list, int count,
 		sg[u].paddr = sg_dma_address(in_sg);
 		sg[u].size = sg_dma_len(in_sg);
 
-		dev_info(&mnh_dev->pdev->dev,
+		dev_dbg(&mnh_dev->pdev->dev,
 			"sg[%d] : Address 0x%llx , length %u\n",
-			u, &sg[u].paddr, sg[u].size);
+			u, sg[u].paddr, sg[u].size);
 #ifdef COMBINE_SG
 		if ((u > 0) && (sg[u-1].paddr + sg[u-1].size ==
 			sg[u].paddr)) {

@@ -503,36 +503,33 @@ err:
 	return NULL;
 }
 
+static void offset_mnh_sg(struct mnh_sg_entry *src_msg, size_t nents,
+		struct mnh_sg_entry *dst_msg, phys_addr_t offset)
+{
+	phys_addr_t src_start_addr = src_msg[0].paddr;
+	int i;
+
+	for (i = 0; i < nents; i++) {
+		if (!src_msg[i].paddr || !src_msg[i].size)
+			break;
+
+		dst_msg[i].paddr = offset + (src_start_addr - src_msg[i].paddr);
+		dst_msg[i].size = src_msg[i].size;
+	}
+}
+
 extern int scatterlist_to_mnh_sg(struct scatterlist *sc_list, int count,
 	struct mnh_sg_entry *sg, size_t maxsg);
-extern struct mnh_device *mnh_dev;
-#include <linux/pci.h>
-#define BAR_MAX_NUM 6
-struct mnh_device {
-	struct pci_dev	*pdev;
-	void __iomem	*pcie_config;
-	void __iomem	*config;
-	void __iomem	*ddr;
-	irq_cb_t	msg_cb;
-	irq_cb_t	vm_cb;
-	irq_dma_cb_t	dma_cb;
-	uint32_t	ring_buf_addr;
-	uint32_t	msi_num;
-	int		irq;
-	uint8_t		bar2_iatu_region; /* 0  - whole BAR2
-					1 - ROM/SRAM
-					2 - Peripheral Config */
-	uint32_t	bar_size[BAR_MAX_NUM];
-	bool powered;
-};
 
 static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	uint64_t dst_addr)
 {
 	struct mnh_dma_element_t dma_blk;
 	int err;
-	struct scatterlist *sgl;
-	struct mnh_sg_entry *msg;
+	struct scatterlist *src_sgl;
+	struct mnh_sg_entry *src_msg;
+	struct mnh_sg_entry *dst_msg;
+	struct mnh_dma_ll *mnh_ll;
 	phys_addr_t msg_addr = 0x5f000000;
 	size_t msg_size;
 	size_t nents;
@@ -542,42 +539,69 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	mnh_sm_dev->image_loaded = FW_IMAGE_NONE;
 
 	nents = DIV_ROUND_UP(fw_size, PAGE_SIZE);
-	maxsg = nents + 1;
-	sgl = videobuf_vmalloc_to_sg((unsigned char *)fw_data, maxsg);
-	if (!sgl) {
-		pr_err("failed to create sgl!\n");
+	src_sgl = videobuf_vmalloc_to_sg((unsigned char *)fw_data, nents);
+	if (!src_sgl) {
+		pr_err("failed to create src_sgl!\n");
 		return -EINVAL;
 	}
 
-	msg_size = maxsg * sizeof(struct mnh_sg_entry);
-	msg = vzalloc(msg_size);
-	if (!msg) {
-		pr_err("failed to alloc msg!\n");
+	maxsg = nents + 1;
+	msg_size = maxsg * sizeof(*src_msg);
+	src_msg = vzalloc(msg_size);
+	if (!src_msg) {
+		pr_err("failed to alloc src_msg!\n");
 		return -ENOMEM;
 	}
 
-	err = dma_map_sg(&mnh_dev->pdev->dev, sgl, nents, DMA_TO_DEVICE);
+	err = mnh_map_sg(src_sgl, nents, DMA_TO_DEVICE);
 	if (err < 0) {
 		pr_err("failed to map sg!\n");
 		return err;
 	}
 
-	err = scatterlist_to_mnh_sg(sgl, nents, msg, maxsg);
+	err = scatterlist_to_mnh_sg(src_sgl, nents, src_msg, maxsg);
 	if (err < 0) {
 		pr_err("failed to convert to mnh sg! err=%d\n", err);
 		return err;
 	}
+	msg_size = err * sizeof(*src_msg);
 
-	err = mnh_sg_verify(msg, msg_size, NULL);
+	dst_msg = vzalloc(msg_size);
+	if (!dst_msg) {
+		pr_err("failed to alloc dst_msg!\n");
+		return -ENOMEM;
+	}
+
+	offset_mnh_sg(src_msg, maxsg, dst_msg, dst_addr);
+
+	err = mnh_sg_verify(src_msg, msg_size, NULL);
 	if (err) {
-		pr_err("failed to verify mnh sg! err=%d\n", err);
+		pr_err("failed to verify mnh src sg! err=%d\n", err);
 		return err;
 	}
 
-	/* Use single-block DMA to transfer the MNH scatter-gather list */
+	err = mnh_sg_verify(dst_msg, msg_size, NULL);
+	if (err) {
+		pr_err("failed to verify mnh dst sg! err=%d\n", err);
+		return err;
+	}
+
+	mnh_ll = kmalloc(sizeof(*mnh_ll), GFP_KERNEL);
+	if (!mnh_ll) {
+		pr_err("failed to alloc mnh ll!\n");
+		return -ENOMEM;
+	}
+
+	err = mnh_ll_build(src_msg, dst_msg, mnh_ll);
+	if (err) {
+		pr_err("failed to build mnh ll! err=%d\n", err);
+		return err;
+	}
+
+	/* Use single-block DMA to transfer the MNH linked list */
 	dma_blk.dst_addr = msg_addr;
-	dma_blk.src_addr = mnh_map_mem(&msg, msg_size, DMA_TO_DEVICE);
-	dma_blk.len = msg_size;
+	dma_blk.src_addr = mnh_ll->dma[0];
+	dma_blk.len = DMA_LL_LENGTH * sizeof(struct mnh_dma_ll_element);
 	dev_dbg(mnh_sm_dev->dev, "MNH SGL download - AP(:0x%llx) to EP(:0x%llx), size(%d)\n",
 			dma_blk.src_addr, dma_blk.dst_addr, dma_blk.len);
 	mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
@@ -585,7 +609,6 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	mnh_dma_sblk_start(MNH_PCIE_CHAN_0, DMA_AP2EP, &dma_blk);
 
 	err = mnh_firmware_waitdownloaded();
-	mnh_unmap_mem((dma_addr_t)&msg, msg_size, DMA_TO_DEVICE);
 	if (err) {
 		pr_err("failed to sblk_dma msg!\n");
 		return err;
@@ -593,20 +616,25 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 
 	/* Finally, perform multi-block DMA to copy the firmware */
 	dev_dbg(mnh_sm_dev->dev, "FW download - AP(:0x%llx) to EP(:0x%llx), size(%d)\n",
-			fw_data, dst_addr, fw_size);
+			src_msg[0].paddr, dst_addr, fw_size);
 	mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
 	reinit_completion(&mnh_sm_dev->dma_complete);
 	before = ktime_get_ns();
+	pr_info("start mblk...\n");
 	mnh_dma_mblk_start(MNH_PCIE_CHAN_0, DMA_AP2EP, &msg_addr);
 
 	/* Wait */
+	pr_info("wait\n");
 	err = mnh_firmware_waitdownloaded();
 	pr_info("DONE! err=%d, %llu ns\n", err, ktime_get_ns() - before);
 
 	/* Clean up */
-	dma_unmap_sg(&mnh_dev->pdev->dev, sgl, nents, DMA_TO_DEVICE);
-	vfree(msg);
-	vfree(sgl);
+	mnh_unmap_sg(src_sgl, nents, DMA_TO_DEVICE);
+	vfree(src_msg);
+	vfree(dst_msg);
+	vfree(src_sgl);
+	mnh_ll_destroy(mnh_ll);
+	kfree(mnh_ll);
 
 	return err;
 }

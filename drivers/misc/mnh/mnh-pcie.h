@@ -143,6 +143,30 @@ struct mnh_dma_element_t {
 	uint64_t dst_addr; /**< DAR - DMA Destination Address */
 };
 
+#define MNH_MAX_LL 256
+#define MNH_MAX_LL_ELEMENT 64
+#define DMA_LL_LENGTH			256 /*TODO Needs to be optimized */
+
+#define LL_DATA_ELEMENT			0x1
+#define LL_IRQ_DATA_ELEMENT		0x19
+#define LL_LINK_ELEMENT			0x5
+#define LL_LAST_LINK_ELEMENT		0x7
+
+struct mnh_dma_ll_element {
+	uint32_t header;
+	uint32_t size;
+	uint32_t sar_low;
+	uint32_t sar_high;
+	uint32_t dar_low;
+	uint32_t dar_high;
+};
+
+struct mnh_dma_ll {
+	uint32_t size;
+	struct mnh_dma_ll_element *ll_element[MNH_MAX_LL_ELEMENT];
+	dma_addr_t dma[MNH_MAX_LL_ELEMENT];
+};
+
 /**
  * Structure used for DMA Channel status
  */
@@ -413,6 +437,11 @@ int mnh_sg_retrieve_from_dma_buf(int fd, struct mnh_sg_entry **sg,
  * @return 0 for SUCCESS
  */
 int mnh_sg_release_from_dma_buf(struct mnh_sg_list *sgl);
+
+int mnh_ll_build(struct mnh_sg_entry *src_sg,
+		struct mnh_sg_entry *dst_sg, struct mnh_dma_ll *ll);
+
+int mnh_ll_destroy(struct mnh_dma_ll *ll);
 
 /**
  * API to read/write multi blocks on specific channel.
