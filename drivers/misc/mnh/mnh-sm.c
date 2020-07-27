@@ -713,31 +713,6 @@ int mnh_download_firmware_legacy(void)
 		return err;
 	}
 
-	err = request_firmware(&fip_img, "easel/fip.bin", mnh_sm_dev->dev);
-	if (err) {
-		dev_err(mnh_sm_dev->dev, "request fip_image failed - %d\n",
-			err);
-		return -EIO;
-	}
-
-	err = request_firmware(&kernel_img, "easel/Image", mnh_sm_dev->dev);
-	if (err) {
-		dev_err(mnh_sm_dev->dev, "request kernel failed - %d\n", err);
-		goto free_fip;
-	}
-
-	err = request_firmware(&dt_img, "easel/mnh.dtb", mnh_sm_dev->dev);
-	if (err) {
-		dev_err(mnh_sm_dev->dev, "request kernel failed - %d\n", err);
-		goto free_kernel;
-	}
-
-	err = request_firmware(&ram_img, "easel/ramdisk.img", mnh_sm_dev->dev);
-	if (err) {
-		dev_err(mnh_sm_dev->dev, "request kernel failed - %d\n", err);
-		goto free_dt;
-	}
-
 	/* get a buffer for transferring firmware */
 	mnh_sm_dev->firmware_buf_size =
 		mnh_alloc_firmware_buf(mnh_sm_dev->dev,
@@ -746,43 +721,81 @@ int mnh_download_firmware_legacy(void)
 		dev_err(mnh_sm_dev->dev,
 			"%s: could not allocate a buffer for firmware transfers\n",
 			__func__);
-		goto free_ramdisk;
+		goto unreg_callback;
 	}
 	dev_dbg(mnh_sm_dev->dev,
 		"%s: firmware_buf_size=%zu",
 		__func__, mnh_sm_dev->firmware_buf_size);
 
-	/* DMA transfer for SBL */
+	/* Load FIP image */
+	err = request_firmware(&fip_img, "easel/fip.bin", mnh_sm_dev->dev);
+	if (err) {
+		dev_err(mnh_sm_dev->dev, "request fip_image failed - %d\n",
+			err);
+		goto fail_downloading;
+	}
+
+	/* Extract SBL from FIP image */
 	memcpy(&size, (uint8_t *)(fip_img->data + FIP_IMG_SBL_SIZE_OFFSET),
 		sizeof(size));
 	memcpy(&addr, (uint8_t *)(fip_img->data + FIP_IMG_SBL_ADDR_OFFSET),
 		sizeof(addr));
 	mnh_sm_dev->sbl_size = size;
 
+	/* DMA transfer for SBL */
 	dev_dbg(mnh_sm_dev->dev, "sbl data addr :0x%x", addr);
 	dev_dbg(mnh_sm_dev->dev, "DOWNLOADING SBL...size:0x%x\n", size);
-	if (mnh_transfer_firmware(size, fip_img->data + addr,
-			HW_MNH_SBL_DOWNLOAD))
+	err = mnh_transfer_firmware(size, fip_img->data + addr,
+			HW_MNH_SBL_DOWNLOAD);
+	release_firmware(fip_img);
+	if (err)
 		goto fail_downloading;
+
+	/* Load dtb */
+	err = request_firmware(&dt_img, "easel/mnh.dtb", mnh_sm_dev->dev);
+	if (err) {
+		dev_err(mnh_sm_dev->dev, "request dtb failed - %d\n", err);
+		goto fail_downloading;
+	}
 
 	/* DMA transfer for device tree */
 	dev_dbg(mnh_sm_dev->dev, "DOWNLOADING DT...size:%zd\n", dt_img->size);
-	if (mnh_transfer_firmware(dt_img->size, dt_img->data,
-			HW_MNH_DT_DOWNLOAD))
+	err = mnh_transfer_firmware(dt_img->size, dt_img->data,
+			HW_MNH_DT_DOWNLOAD);
+	release_firmware(dt_img);
+	if (err)
 		goto fail_downloading;
+
+	/* Load ramdisk */
+	err = request_firmware(&ram_img, "easel/ramdisk.img", mnh_sm_dev->dev);
+	if (err) {
+		dev_err(mnh_sm_dev->dev, "request ramdisk failed - %d\n", err);
+		goto fail_downloading;
+	}
 
 	/* DMA transfer for ramdisk */
 	dev_dbg(mnh_sm_dev->dev, "DOWNLOADING RAMDISK...size:%zd\n",
 		 ram_img->size);
-	if (mnh_transfer_firmware(ram_img->size, ram_img->data,
-			HW_MNH_RAMDISK_DOWNLOAD))
+	err = mnh_transfer_firmware(ram_img->size, ram_img->data,
+			HW_MNH_RAMDISK_DOWNLOAD);
+	release_firmware(ram_img);
+	if (err)
 		goto fail_downloading;
+
+	/* Load kernel image */
+	err = request_firmware(&kernel_img, "easel/Image", mnh_sm_dev->dev);
+	if (err) {
+		dev_err(mnh_sm_dev->dev, "request kernel failed - %d\n", err);
+		goto fail_downloading;
+	}
 
 	/* DMA transfer for Kernel image */
 	dev_dbg(mnh_sm_dev->dev, "DOWNLOADING KERNEL...size:%zd\n",
 		 kernel_img->size);
-	if (mnh_transfer_firmware(kernel_img->size, kernel_img->data,
-			HW_MNH_KERNEL_DOWNLOAD))
+	err = mnh_transfer_firmware(kernel_img->size, kernel_img->data,
+			HW_MNH_KERNEL_DOWNLOAD);
+	release_firmware(kernel_img);
+	if (err)
 		goto fail_downloading;
 
 	/* Configure sbl addresses and size */
@@ -806,11 +819,6 @@ int mnh_download_firmware_legacy(void)
 	mnh_sm_dev->firmware_buf_size = 0;
 	mnh_sm_dev->firmware_buf = NULL;
 
-	release_firmware(fip_img);
-	release_firmware(kernel_img);
-	release_firmware(dt_img);
-	release_firmware(ram_img);
-
 	/* Unregister DMA callback */
 	mnh_reg_irq_callback(NULL, NULL, NULL);
 
@@ -821,16 +829,8 @@ int mnh_download_firmware_legacy(void)
 fail_downloading:
 	dev_err(mnh_sm_dev->dev, "FW downloading fails\n");
 	mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOAD_FAIL;
-free_ramdisk:
+unreg_callback:
 	mnh_sm_dev->firmware_buf_size = 0;
-
-	release_firmware(ram_img);
-free_dt:
-	release_firmware(dt_img);
-free_kernel:
-	release_firmware(kernel_img);
-free_fip:
-	release_firmware(fip_img);
 
 	/* Unregister DMA callback */
 	mnh_reg_irq_callback(NULL, NULL, NULL);
