@@ -426,7 +426,15 @@ static size_t mnh_alloc_firmware_buf(struct device *dev, uint32_t **buf)
 	size_t size = IMG_DOWNLOAD_MAX_SIZE;
 
 	while (size > 0) {
-		*buf = devm_kmalloc(dev, size, GFP_KERNEL | __GFP_NOWARN);
+		/*
+		 * Allow expensive reclaim mechanisms if the target size is
+		 * small enough to be worth it. Larger buffer sizes have
+		 * diminishing returns, so spending too much time trying to
+		 * allocate them is pointless.
+		 */
+		gfp_t flags = (size <= SZ_128K) ? GFP_KERNEL :
+			(GFP_NOWAIT | __GFP_NOWARN | __GFP_NORETRY);
+		*buf = devm_kmalloc(dev, size, flags);
 		if (*buf)
 			break;
 
