@@ -535,14 +535,29 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	size_t nents;
 	size_t maxsg;
 	u64 before;
+	int i;
 
 	mnh_sm_dev->image_loaded = FW_IMAGE_NONE;
 
-	nents = DIV_ROUND_UP(fw_size, PAGE_SIZE);
-	src_sgl = videobuf_vmalloc_to_sg((unsigned char *)fw_data, nents);
+	nents = DIV_ROUND_UP(fw_size, SZ_1M);
+	src_sgl = vmalloc(nents * sizeof(*src_sgl));
 	if (!src_sgl) {
 		pr_err("failed to create src_sgl!\n");
 		return -EINVAL;
+	}
+
+	sg_init_table(src_sgl, nents);
+	for (i = 0; i < nents; i++) {
+		size_t chunk_size;
+		char *buf = kmalloc(SZ_1M, GFP_KERNEL);
+		if (!buf) {
+			pr_err("failed to alloc 1m buf!\n");
+			return -ENOMEM;
+		}
+
+		chunk_size = min(fw_size - (i * SZ_1M), SZ_1M);
+		memcpy(buf, fw_data + (i * SZ_1M), chunk_size);
+		sg_set_buf(&src_sgl[i], buf, chunk_size);
 	}
 
 	maxsg = nents + 1;
