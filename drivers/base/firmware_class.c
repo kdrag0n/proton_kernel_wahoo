@@ -322,9 +322,6 @@ static const char * const fw_path[] = {
 module_param_string(path, fw_path_para, sizeof(fw_path_para), 0644);
 MODULE_PARM_DESC(path, "customized firmware image search path with a higher priority than default path");
 
-bool use_shared_buf = false;
-static char *shared_buf;
-
 static int fw_read_file_contents(struct file *file, struct firmware_buf *fw_buf)
 {
 	int size;
@@ -342,8 +339,6 @@ static int fw_read_file_contents(struct file *file, struct firmware_buf *fw_buf)
 	if (fw_buf->dest_addr)
 		buf = fw_buf->map_fw_mem(fw_buf->dest_addr,
 					   fw_buf->dest_size, fw_buf->map_data);
-	else if (use_shared_buf)
-		buf = shared_buf;
 	else
 		buf = vmalloc(size);
 	if (!buf)
@@ -1995,9 +1990,6 @@ static void __init fw_cache_init(void)
 static int __init firmware_class_init(void)
 {
 	fw_cache_init();
-	pr_info("fwc: allocating 4m shared buf...\n");
-	shared_buf = kmalloc(SZ_4M, GFP_KERNEL);
-	pr_info("done\n");
 #ifdef CONFIG_FW_LOADER_USER_HELPER
 	register_reboot_notifier(&fw_shutdown_nb);
 	return class_register(&firmware_class);
