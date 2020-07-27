@@ -147,8 +147,8 @@ struct mnh_sm_device {
 	atomic_t cdev_ctr;
 	struct device *chardev;
 	struct class *dev_class;
-	uint32_t *firmware_buf[2];
-	size_t firmware_buf_size[2];
+	uint32_t *firmware_buf;
+	size_t firmware_buf_size;
 	enum fw_image_state image_loaded;
 	int state;
 
@@ -480,9 +480,6 @@ static int mnh_transfer_firmware_contig(size_t fw_size, dma_addr_t src_addr,
 static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	uint64_t dst_addr)
 {
-	uint32_t *buf;
-	size_t buf_size;
-	int buf_index = 0;
 	struct mnh_dma_element_t dma_blk;
 	int err = -EINVAL;
 	size_t sent = 0, size = 0, remaining;
@@ -497,12 +494,7 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	 * 3. Start transferring buffer A; repeat
 	 */
 	while (remaining > 0) {
-		buf = mnh_sm_dev->firmware_buf[buf_index];
-		buf_size = mnh_sm_dev->firmware_buf_size[buf_index];
-
-		size = MIN(remaining, buf_size);
-
-		memcpy(buf, fw_data + sent, size);
+		size = MIN(remaining, mnh_sm_dev->firmware_buf_size);
 
 		if (mnh_sm_dev->image_loaded != FW_IMAGE_NONE) {
 			err = mnh_firmware_waitdownloaded();
@@ -511,9 +503,12 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 				break;
 		}
 
+		memcpy(mnh_sm_dev->firmware_buf, fw_data + sent, size);
+
 		dma_blk.dst_addr = dst_addr + sent;
 		dma_blk.len = size;
-		dma_blk.src_addr = mnh_map_mem(buf, size, DMA_TO_DEVICE);
+		dma_blk.src_addr = mnh_map_mem(mnh_sm_dev->firmware_buf, size,
+				DMA_TO_DEVICE);
 
 		if (!dma_blk.src_addr) {
 			dev_err(mnh_sm_dev->dev,
@@ -530,7 +525,6 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 
 		sent += size;
 		remaining -= size;
-		buf_index = (buf_index + 1) & 0x1;
 		dev_dbg(mnh_sm_dev->dev, "Sent:%zd, Remaining:%zd\n",
 			 sent, remaining);
 	}
@@ -744,21 +738,19 @@ int mnh_download_firmware_legacy(void)
 		goto free_dt;
 	}
 
-	/* get double buffers for transferring firmware */
-	for (i = 0; i < 2; i++) {
-		mnh_sm_dev->firmware_buf_size[i] =
-			mnh_alloc_firmware_buf(mnh_sm_dev->dev,
-					       &mnh_sm_dev->firmware_buf[i]);
-		if (!mnh_sm_dev->firmware_buf_size[i]) {
-			dev_err(mnh_sm_dev->dev,
-				"%s: could not allocate a buffer for firmware transfers\n",
-				__func__);
-			goto free_ramdisk;
-		}
-		dev_dbg(mnh_sm_dev->dev,
-			"%s: firmware_buf_size[%d]=%zu",
-			__func__, i, mnh_sm_dev->firmware_buf_size[i]);
+	/* get a buffer for transferring firmware */
+	mnh_sm_dev->firmware_buf_size =
+		mnh_alloc_firmware_buf(mnh_sm_dev->dev,
+					&mnh_sm_dev->firmware_buf);
+	if (!mnh_sm_dev->firmware_buf_size) {
+		dev_err(mnh_sm_dev->dev,
+			"%s: could not allocate a buffer for firmware transfers\n",
+			__func__);
+		goto free_ramdisk;
 	}
+	dev_dbg(mnh_sm_dev->dev,
+		"%s: firmware_buf_size=%zu",
+		__func__, mnh_sm_dev->firmware_buf_size);
 
 	/* DMA transfer for SBL */
 	memcpy(&size, (uint8_t *)(fip_img->data + FIP_IMG_SBL_SIZE_OFFSET),
@@ -809,12 +801,10 @@ int mnh_download_firmware_legacy(void)
 	mnh_config_write(HW_MNH_PCIE_CLUSTER_ADDR_OFFSET + HW_MNH_PCIE_GP_3, 4,
 			 HW_MNH_DT_DOWNLOAD);
 
-	for (i = 0; i < 2; i++) {
-		mnh_free_firmware_buf(mnh_sm_dev->dev,
-				      mnh_sm_dev->firmware_buf[i]);
-		mnh_sm_dev->firmware_buf_size[i] = 0;
-		mnh_sm_dev->firmware_buf[i] = NULL;
-	}
+	mnh_free_firmware_buf(mnh_sm_dev->dev,
+			mnh_sm_dev->firmware_buf);
+	mnh_sm_dev->firmware_buf_size = 0;
+	mnh_sm_dev->firmware_buf = NULL;
 
 	release_firmware(fip_img);
 	release_firmware(kernel_img);
@@ -832,12 +822,8 @@ fail_downloading:
 	dev_err(mnh_sm_dev->dev, "FW downloading fails\n");
 	mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOAD_FAIL;
 free_ramdisk:
-	for (i = 0; i < 2; i++) {
-		mnh_free_firmware_buf(mnh_sm_dev->dev,
-				      mnh_sm_dev->firmware_buf[i]);
-		mnh_sm_dev->firmware_buf_size[i] = 0;
-		mnh_sm_dev->firmware_buf[i] = NULL;
-	}
+	mnh_sm_dev->firmware_buf_size = 0;
+
 	release_firmware(ram_img);
 free_dt:
 	release_firmware(dt_img);
