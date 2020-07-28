@@ -482,6 +482,8 @@ void mnh_unmap_mem(
  */
 void mnh_sync_mem_for_device(
 	dma_addr_t dma_addr, size_t size, enum dma_data_direction direction);
+void mnh_sync_mem_for_cpu(
+	dma_addr_t dma_addr, size_t size, enum dma_data_direction direction);
 
 int mnh_pci_suspend(struct pci_dev *pdev);
 int mnh_pci_resume(struct pci_dev *pdev);
