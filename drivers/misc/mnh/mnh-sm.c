@@ -429,6 +429,7 @@ static size_t mnh_alloc_firmware_buf(struct device *dev, uint32_t **buf)
 	size_t size = IMG_DOWNLOAD_MAX_SIZE;
 
 	while (size > 0) {
+		dev_info(dev, "%s: SARU: allocating %zu KiB\n", __func__, size / 1024);
 		*buf = devm_kmalloc(dev, size, GFP_DMABUF);
 		if (*buf)
 			break;
@@ -703,6 +704,8 @@ int mnh_download_firmware_legacy(void)
 	int err;
 	uint32_t size, addr;
 	int i;
+	u64 before;
+	u64 total_elapsed = 0;
 
 	mnh_sm_dev->image_loaded = FW_IMAGE_NONE;
 
@@ -715,6 +718,7 @@ int mnh_download_firmware_legacy(void)
 	}
 
 	/* get a buffer for transferring firmware */
+	before = ktime_get_ns();
 	mnh_sm_dev->firmware_buf_size =
 		mnh_alloc_firmware_buf(mnh_sm_dev->dev,
 					&mnh_sm_dev->firmware_buf);
@@ -725,9 +729,9 @@ int mnh_download_firmware_legacy(void)
 		err = -ENOMEM;
 		goto unreg_callback;
 	}
-	dev_dbg(mnh_sm_dev->dev,
-		"%s: firmware_buf_size=%zu",
-		__func__, mnh_sm_dev->firmware_buf_size);
+	dev_info(mnh_sm_dev->dev,
+		"%s: SARU: firmware_buf_size=%zu, took %llu us\n",
+		__func__, mnh_sm_dev->firmware_buf_size, (ktime_get_ns() - before) / 1000);
 
 	/* Load FIP image */
 	err = request_firmware(&fip_img, "easel/fip.bin", mnh_sm_dev->dev);
@@ -745,8 +749,10 @@ int mnh_download_firmware_legacy(void)
 	/* DMA transfer for SBL */
 	dev_dbg(mnh_sm_dev->dev, "sbl data addr :0x%x", addr);
 	dev_dbg(mnh_sm_dev->dev, "DOWNLOADING SBL...size:0x%x\n", size);
+	before = ktime_get_ns();
 	err = mnh_transfer_firmware(size, fip_img->data + addr,
 			HW_MNH_SBL_DOWNLOAD);
+	total_elapsed += ktime_get_ns() - before;
 	release_firmware(fip_img);
 	if (err)
 		goto fail_downloading;
@@ -760,8 +766,10 @@ int mnh_download_firmware_legacy(void)
 
 	/* DMA transfer for device tree */
 	dev_dbg(mnh_sm_dev->dev, "DOWNLOADING DT...size:%zd\n", dt_img->size);
+	before = ktime_get_ns();
 	err = mnh_transfer_firmware(dt_img->size, dt_img->data,
 			HW_MNH_DT_DOWNLOAD);
+	total_elapsed += ktime_get_ns() - before;
 	release_firmware(dt_img);
 	if (err)
 		goto fail_downloading;
@@ -776,8 +784,10 @@ int mnh_download_firmware_legacy(void)
 	/* DMA transfer for ramdisk */
 	dev_dbg(mnh_sm_dev->dev, "DOWNLOADING RAMDISK...size:%zd\n",
 		 ram_img->size);
+	before = ktime_get_ns();
 	err = mnh_transfer_firmware(ram_img->size, ram_img->data,
 			HW_MNH_RAMDISK_DOWNLOAD);
+	total_elapsed += ktime_get_ns() - before;
 	release_firmware(ram_img);
 	if (err)
 		goto fail_downloading;
@@ -792,11 +802,15 @@ int mnh_download_firmware_legacy(void)
 	/* DMA transfer for Kernel image */
 	dev_dbg(mnh_sm_dev->dev, "DOWNLOADING KERNEL...size:%zd\n",
 		 kernel_img->size);
+	before = ktime_get_ns();
 	err = mnh_transfer_firmware(kernel_img->size, kernel_img->data,
 			HW_MNH_KERNEL_DOWNLOAD);
+	total_elapsed += ktime_get_ns() - before;
 	release_firmware(kernel_img);
 	if (err)
 		goto fail_downloading;
+
+	dev_info(mnh_sm_dev->dev, "SARU: DMA took %llu us\n", total_elapsed / 1000);
 
 	/* Configure sbl addresses and size */
 	mnh_config_write(HW_MNH_PCIE_CLUSTER_ADDR_OFFSET + HW_MNH_PCIE_GP_4, 4,
@@ -1543,7 +1557,7 @@ static int mnh_sm_download(void)
 	start = ktime_get();
 	ret = mnh_download_firmware();
 	end = ktime_get();
-	dev_info(mnh_sm_dev->dev, "iter:%d took %d ms to download firmware\n",
+	dev_info(mnh_sm_dev->dev, "SARU: iter:%d took %d ms to download firmware\n",
 		 iter, (unsigned)ktime_to_ms(ktime_sub(end, start)));
 
 	if (ret) {
