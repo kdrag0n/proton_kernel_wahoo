@@ -39,6 +39,11 @@
 #include <linux/sysfs.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
+#include <linux/fs.h>
+#include <linux/init.h>
+#include <linux/kernel.h>
+#include <linux/proc_fs.h>
+#include <linux/seq_file.h>
 
 #include "hw-mnh-regs.h"
 #include "mnh-clk.h"
@@ -52,6 +57,9 @@
 #include "mnh-pcie.h"
 #include "mnh-pwr.h"
 #include "mnh-sm.h"
+
+#undef dev_dbg
+#define dev_dbg dev_info
 
 #define MNH_SCU_INf(reg, fld) \
 HW_INf(HWIO_SCU_BASE_ADDR, SCU, reg, fld)
@@ -371,7 +379,7 @@ static int dma_callback(uint8_t chan, enum mnh_dma_chan_dir_t dir,
 		 chan, (dir == DMA_AP2EP)?"READ(AP2EP)":"WRITE(EP2AP)",
 		 (status == DMA_DONE)?"DONE":"ABORT");
 
-	if (chan == MNH_PCIE_CHAN_0 && dir == DMA_AP2EP) {
+	if (chan == MNH_PCIE_CHAN_0) {
 		if (mnh_sm_dev->image_loaded == FW_IMAGE_DOWNLOADING) {
 			if (status == DMA_DONE)
 				mnh_sm_dev->image_loaded =
@@ -538,6 +546,9 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	mnh_unmap_mem(dma_blk.src_addr, fw_buf_size, DMA_TO_DEVICE);
 	return err;
 }
+
+static int mnh_fwd_hook(void);
+bool in_dump = false;
 
 /*
  * Returns:
@@ -730,6 +741,16 @@ int mnh_download_firmware_legacy(void)
 		"%s: firmware_buf_size=%zu",
 		__func__, mnh_sm_dev->firmware_buf_size);
 
+	if (in_dump) {
+		err = mnh_fwd_hook();
+		if (err) {
+			dev_err(mnh_sm_dev->dev, "err in fwd hook - %d\n", err);
+			goto fail_downloading;
+		}
+
+		goto done;
+	}
+
 	/* Load FIP image */
 	err = request_firmware(&fip_img, "easel/fip.bin", mnh_sm_dev->dev);
 	if (err) {
@@ -817,6 +838,7 @@ int mnh_download_firmware_legacy(void)
 	mnh_config_write(HW_MNH_PCIE_CLUSTER_ADDR_OFFSET + HW_MNH_PCIE_GP_3, 4,
 			 HW_MNH_DT_DOWNLOAD);
 
+done:
 	mnh_free_firmware_buf(mnh_sm_dev->dev,
 			mnh_sm_dev->firmware_buf);
 	mnh_sm_dev->firmware_buf_size = 0;
@@ -1872,6 +1894,7 @@ static int mnh_sm_set_state_locked(int state)
 		mnh_cpu_freq_change(CPU_FREQ_950);
 
 		/* have we downloaded firmware already? */
+		/*
 		if (mnh_sm_dev->firmware_downloaded)
 			ret = mnh_sm_resume();
 		else
@@ -1882,6 +1905,7 @@ static int mnh_sm_set_state_locked(int state)
 		ret = mnh_sm_hotplug_callback(MNH_HOTPLUG_IN);
 		if (ret)
 			mnh_sm_print_boot_trace(mnh_sm_dev->dev);
+		*/
 
 		break;
 	case MNH_STATE_SUSPEND:
@@ -2308,6 +2332,179 @@ static struct miscdevice mnh_sm_miscdevice = {
 	.groups = mnh_sm_groups,
 };
 
+#define pa_to_va(addr)	__va((phys_addr_t)(addr))
+
+// modem pil mem
+//phys_addr_t phys = 0x8cc00000;
+// hyp log
+phys_addr_t phys = 0x85997000;
+// removed region (hyp)
+//phys_addr_t phys = 0x85800000;
+// adsp mem
+//phys_addr_t phys = 0x8b200000;
+
+size_t dump_size = 8192;
+char *dump_buf;
+u64 last_dump_time = 0;
+
+static int write_to_mnh(dma_addr_t src_addr, size_t size, const uint64_t dst_addr)
+{
+	struct mnh_dma_element_t dma_blk;
+	int err = -EINVAL;
+
+	dma_blk.dst_addr = dst_addr;
+	dma_blk.len = size;
+	dma_blk.src_addr = src_addr;
+
+	dev_info(mnh_sm_dev->dev,
+		"FW download - AP(:0x%llx) to EP(:0x%llx), size(%d)\n",
+		dma_blk.src_addr, dma_blk.dst_addr, dma_blk.len);
+
+	mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
+	reinit_completion(&mnh_sm_dev->dma_complete);
+	mnh_dma_sblk_start(MNH_PCIE_CHAN_0, DMA_AP2EP, &dma_blk);
+
+	err = mnh_firmware_waitdownloaded();
+
+	return err;
+}
+
+static int read_from_mnh(const uint8_t *src_addr, size_t src_size, const uint8_t *dst_addr)
+{
+	uint32_t *fw_buf = mnh_sm_dev->firmware_buf;
+	size_t fw_buf_size = mnh_sm_dev->firmware_buf_size;
+	struct mnh_dma_element_t dma_blk;
+	int err = -EINVAL;
+	size_t received = 0, size = 0, remaining;
+	enum mnh_dma_chan_dir_t dir = DMA_EP2AP;
+	enum dma_data_direction dma_dir = dir == DMA_AP2EP ? DMA_TO_DEVICE : DMA_FROM_DEVICE;
+
+	remaining = src_size;
+
+	mnh_sm_dev->image_loaded = FW_IMAGE_NONE;
+
+	dma_blk.dst_addr = mnh_map_mem(fw_buf, fw_buf_size, dma_dir);
+	if (!dma_blk.dst_addr) {
+		dev_err(mnh_sm_dev->dev,
+			"Could not map dma buffer for FW download\n");
+		return -ENOMEM;
+	}
+
+	/*
+	 * 1. Prepare for buffer A
+	 * 2. Wait for buffer B to complete
+	 * 3. Start transferring buffer A; repeat
+	 */
+	while (remaining > 0) {
+		size = MIN(remaining, fw_buf_size);
+
+		dma_blk.src_addr = (uint64_t)(src_addr + received);
+		dma_blk.len = size;
+
+		dev_info(mnh_sm_dev->dev, "FW download - AP(:0x%llx) to EP(:0x%llx), size(%d)\n",
+			 dma_blk.src_addr, dma_blk.dst_addr, dma_blk.len);
+
+		mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
+		reinit_completion(&mnh_sm_dev->dma_complete);
+		mnh_dma_sblk_start(MNH_PCIE_CHAN_0, dir, &dma_blk);
+
+		err = mnh_firmware_waitdownloaded();
+		if (err)
+			break;
+
+		mnh_sync_mem_for_cpu(dma_blk.dst_addr, fw_buf_size,
+					dma_dir);
+		memcpy((void *)(dst_addr + received), fw_buf, size);
+
+		received += size;
+		remaining -= size;
+		dev_info(mnh_sm_dev->dev, "Received:%zd, Remaining:%zd\n",
+			 received, remaining);
+	}
+
+	mnh_unmap_mem(dma_blk.dst_addr, fw_buf_size, dma_dir);
+	return err;
+}
+
+static int mnh_fwd_hook(void)
+{
+	int err;
+
+	err = write_to_mnh(phys, dump_size, (uint64_t)HW_MNH_SBL_DOWNLOAD);
+	if (err) {
+		pr_info("write err %d\n", err);
+		return err;
+	}
+
+	err = read_from_mnh((uint8_t *)HW_MNH_SBL_DOWNLOAD, dump_size, dump_buf);
+	if (err) {
+		pr_info("read err %d\n", err);
+		return err;
+	}
+
+	return 0;
+}
+
+static int data_dump_dma_proc_show(struct seq_file *m, void *v)
+{
+	if (!dump_buf) {
+		dump_buf = vmalloc(dump_size);
+		if (!dump_buf)
+			return -ENOMEM;
+	}
+
+	in_dump = true;
+	if (jiffies - last_dump_time >= msecs_to_jiffies(750)) {
+		memset(dump_buf, 0, dump_size);
+		mnh_sm_set_state(MNH_STATE_ACTIVE);
+		mnh_download_firmware_legacy();
+		last_dump_time = jiffies;
+	}
+	in_dump = false;
+
+	seq_write(m, dump_buf, dump_size);
+	return 0;
+}
+
+static int data_dump_dma_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, data_dump_dma_proc_show, NULL);
+}
+ 
+static const struct file_operations data_dump_dma_proc_fops = {
+	.open	 	= data_dump_dma_proc_open,
+	.read	  	= seq_read,
+	.llseek	 	= seq_lseek,
+	.release	= single_release,
+};
+
+static int data_dump_cpu_proc_show(struct seq_file *m, void *v)
+{
+	char *virt = ioremap(phys, dump_size);
+	if (!dump_buf) {
+		dump_buf = vmalloc(dump_size);
+		if (!dump_buf)
+			return -ENOMEM;
+	}
+
+	memset(dump_buf, 0, dump_size);
+	memcpy_fromio(dump_buf, virt, dump_size);
+	seq_write(m, dump_buf, dump_size);
+	return 0;
+}
+
+static int data_dump_cpu_proc_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, data_dump_cpu_proc_show, NULL);
+}
+ 
+static const struct file_operations data_dump_cpu_proc_fops = {
+	.open	 	= data_dump_cpu_proc_open,
+	.read	  	= seq_read,
+	.llseek	 	= seq_lseek,
+	.release	= single_release,
+};
+
 static int mnh_sm_probe(struct platform_device *pdev)
 {
 	struct device *dev;
@@ -2454,6 +2651,8 @@ static int mnh_sm_probe(struct platform_device *pdev)
 
 	mnh_sm_dev->initialized = true;
 	dev_info(dev, "MNH SM initialized successfully\n");
+        proc_create("data_dump_dma", 0, NULL, &data_dump_dma_proc_fops);
+        proc_create("data_dump_cpu", 0, NULL, &data_dump_cpu_proc_fops);
 
 	return 0;
 

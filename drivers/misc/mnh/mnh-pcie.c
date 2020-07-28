@@ -154,6 +154,14 @@ void mnh_sync_mem_for_device(
 }
 EXPORT_SYMBOL(mnh_sync_mem_for_device);
 
+void mnh_sync_mem_for_cpu(
+	dma_addr_t dma_addr, size_t size, enum dma_data_direction direction)
+{
+	dma_sync_single_for_cpu(&mnh_dev->pdev->dev, dma_addr, size,
+				   direction);
+}
+EXPORT_SYMBOL(mnh_sync_mem_for_cpu);
+
 /**
  * API to read data from PCIE configuration space
  * @param[in] offset  offset into PCIE configuration space(BAR0)
