@@ -474,6 +474,15 @@ dma_addr_t mnh_map_mem(
 void mnh_unmap_mem(
         dma_addr_t dma_addr, size_t size, enum dma_data_direction direction);
 
+/**
+ * Sync mapped host memory for MNH PCIe host access
+ * @param[in] dma_addr DMA address of the memory returned by mnh_map_mem()
+ * @param[in] size size of the memory region in bytes
+ * @param[in] direction DMA direction DMA_TO_DEVICE, etc.
+ */
+void mnh_sync_mem_for_device(
+	dma_addr_t dma_addr, size_t size, enum dma_data_direction direction);
+
 int mnh_pci_suspend(struct pci_dev *pdev);
 int mnh_pci_resume(struct pci_dev *pdev);
 #endif /* __MNH_PCIE_HOST */
