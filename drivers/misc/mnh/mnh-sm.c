@@ -722,6 +722,7 @@ int mnh_download_firmware_legacy(void)
 		dev_err(mnh_sm_dev->dev,
 			"%s: could not allocate a buffer for firmware transfers\n",
 			__func__);
+		err = -ENOMEM;
 		goto unreg_callback;
 	}
 	dev_dbg(mnh_sm_dev->dev,
@@ -835,7 +836,7 @@ unreg_callback:
 
 	/* Unregister DMA callback */
 	mnh_reg_irq_callback(NULL, NULL, NULL);
-	return -EIO;
+	return err;
 }
 
 int mnh_download_firmware(void)
