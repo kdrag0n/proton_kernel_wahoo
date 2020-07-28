@@ -2351,6 +2351,7 @@ static int write_to_mnh(dma_addr_t src_addr, size_t size, const uint64_t dst_add
 {
 	struct mnh_dma_element_t dma_blk;
 	int err = -EINVAL;
+	u64 before;
 
 	dma_blk.dst_addr = dst_addr;
 	dma_blk.len = size;
@@ -2362,9 +2363,11 @@ static int write_to_mnh(dma_addr_t src_addr, size_t size, const uint64_t dst_add
 
 	mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
 	reinit_completion(&mnh_sm_dev->dma_complete);
+	before = ktime_get_ns();
 	mnh_dma_sblk_start(MNH_PCIE_CHAN_0, DMA_AP2EP, &dma_blk);
 
 	err = mnh_firmware_waitdownloaded();
+	pr_info("SARU: dma write op took %llu us\n", (ktime_get_ns() - before) / 1000);
 
 	return err;
 }
@@ -2378,6 +2381,7 @@ static int read_from_mnh(const uint8_t *src_addr, size_t src_size, const uint8_t
 	size_t received = 0, size = 0, remaining;
 	enum mnh_dma_chan_dir_t dir = DMA_EP2AP;
 	enum dma_data_direction dma_dir = dir == DMA_AP2EP ? DMA_TO_DEVICE : DMA_FROM_DEVICE;
+	u64 before;
 
 	remaining = src_size;
 
@@ -2406,6 +2410,7 @@ static int read_from_mnh(const uint8_t *src_addr, size_t src_size, const uint8_t
 
 		mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
 		reinit_completion(&mnh_sm_dev->dma_complete);
+		before = ktime_get_ns();
 		mnh_dma_sblk_start(MNH_PCIE_CHAN_0, dir, &dma_blk);
 
 		err = mnh_firmware_waitdownloaded();
@@ -2414,6 +2419,7 @@ static int read_from_mnh(const uint8_t *src_addr, size_t src_size, const uint8_t
 
 		mnh_sync_mem_for_cpu(dma_blk.dst_addr, fw_buf_size,
 					dma_dir);
+		pr_info("SARU: dma read op took %llu us\n", (ktime_get_ns() - before) / 1000);
 		memcpy((void *)(dst_addr + received), fw_buf, size);
 
 		received += size;
@@ -2429,14 +2435,19 @@ static int read_from_mnh(const uint8_t *src_addr, size_t src_size, const uint8_t
 static int mnh_fwd_hook(void)
 {
 	int err;
+	u64 before;
 
+	before = ktime_get_ns();
 	err = write_to_mnh(phys, dump_size, (uint64_t)HW_MNH_SBL_DOWNLOAD);
+	pr_info("SARU: write_to_mnh took %llu us\n", (ktime_get_ns() - before) / 1000);
 	if (err) {
 		pr_info("write err %d\n", err);
 		return err;
 	}
 
+	before = ktime_get_ns();
 	err = read_from_mnh((uint8_t *)HW_MNH_SBL_DOWNLOAD, dump_size, dump_buf);
+	pr_info("SARU: read_from_mnh took %llu us\n", (ktime_get_ns() - before) / 1000);
 	if (err) {
 		pr_info("read err %d\n", err);
 		return err;
