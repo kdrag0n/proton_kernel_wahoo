@@ -685,6 +685,7 @@ static int pil_load_seg(struct pil_desc *desc, struct pil_seg *seg)
 	}
 
 	/* Zero out trailing memory */
+	pr_info("SARU: %s to 0x%llx size=%llu KiB\n", fw_name, seg->paddr, seg->filesz / 1024);
 	paddr = seg->paddr + seg->filesz;
 	count = seg->sz - seg->filesz;
 	while (count > 0) {
@@ -861,6 +862,7 @@ int pil_boot(struct pil_desc *desc)
 			goto err_deinit_image;
 	}
 
+/*
 	if (desc->subsys_vmid > 0) {
 		ret =  pil_reclaim_mem(desc, priv->region_start,
 				(priv->region_end - priv->region_start),
@@ -872,6 +874,7 @@ int pil_boot(struct pil_desc *desc)
 		}
 		hyp_assign = false;
 	}
+*/
 
 	ret = desc->ops->auth_and_reset(desc);
 	if (ret) {
