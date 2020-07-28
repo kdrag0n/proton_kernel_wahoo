@@ -424,24 +424,14 @@ static int mnh_firmware_waitdownloaded(void)
  *
  * Returns size of allocated memory in bytes.
  */
-static size_t mnh_alloc_firmware_buf(struct device *dev, uint32_t **buf)
+static size_t mnh_alloc_firmware_buf(struct device *dev, uint32_t **buf, size_t size)
 {
-	size_t size = IMG_DOWNLOAD_MAX_SIZE;
-
-	while (size > 0) {
-		dev_info(dev, "%s: SARU: allocating %zu KiB\n", __func__, size / 1024);
-		*buf = devm_kmalloc(dev, size, GFP_DMABUF);
-		if (*buf)
-			break;
-
-		size >>= 1;
-	}
-
-	/* Allow expensive reclaim mechanisms as a last resort */
-	if (!*buf)
-		*buf = devm_kmalloc(dev, size, GFP_KERNEL);
-
-	return size;
+	dev_info(dev, "%s: SARU: allocating %zu KiB\n", __func__, size / 1024);
+	*buf = devm_kmalloc(dev, size, GFP_KERNEL);
+	if (*buf)
+		return size;
+	else
+		return 0;
 }
 
 /**
@@ -697,7 +687,7 @@ int mnh_download_firmware_ion(struct mnh_ion *ion[FW_PART_MAX])
 	return 0;
 }
 
-int mnh_download_firmware_legacy(void)
+int mnh_download_firmware_legacy(size_t buf_size)
 {
 	const struct firmware *dt_img, *kernel_img, *ram_img;
 	const struct firmware *fip_img;
@@ -721,7 +711,7 @@ int mnh_download_firmware_legacy(void)
 	before = ktime_get_ns();
 	mnh_sm_dev->firmware_buf_size =
 		mnh_alloc_firmware_buf(mnh_sm_dev->dev,
-					&mnh_sm_dev->firmware_buf);
+					&mnh_sm_dev->firmware_buf, buf_size);
 	if (!mnh_sm_dev->firmware_buf_size) {
 		dev_err(mnh_sm_dev->dev,
 			"%s: could not allocate a buffer for firmware transfers\n",
@@ -810,7 +800,8 @@ int mnh_download_firmware_legacy(void)
 	if (err)
 		goto fail_downloading;
 
-	dev_info(mnh_sm_dev->dev, "SARU: DMA took %llu us\n", total_elapsed / 1000);
+	dev_info(mnh_sm_dev->dev, "SARU: DMA took %llu ms\n", total_elapsed / 1000 / 1000);
+	pr_info("ABENCH: %llu %llu\n", buf_size / 1024, total_elapsed / 1000 / 1000);
 
 	/* Configure sbl addresses and size */
 	mnh_config_write(HW_MNH_PCIE_CLUSTER_ADDR_OFFSET + HW_MNH_PCIE_GP_4, 4,
@@ -865,7 +856,7 @@ int mnh_download_firmware(void)
 #if !IS_ENABLED(CONFIG_MNH_SIG_FORCE_OTA)
 	/* Otherwise fall back to legacy mode */
 	dev_err(mnh_sm_dev->dev, "%s: Fallback to legacy mode\n", __func__);
-	return mnh_download_firmware_legacy();
+	return 0;//mnh_download_firmware_legacy();
 #else
 	return -EKEYREJECTED;
 #endif
@@ -1541,6 +1532,8 @@ static int mnh_sm_suspend_ddr(void)
 	return 0;
 }
 
+static const size_t alloc_sizes[] = {4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096};
+
 /**
  * API to download the binary images(SBL, UBoot, Kernel, Ramdisk) for mnh.
  * The location of the binaries will be located in the AP file system.
@@ -1552,18 +1545,21 @@ static int mnh_sm_download(void)
 	int ret;
 	ktime_t start, end;
 	static int iter;
+	int i;
 
-	iter++;
-	start = ktime_get();
-	ret = mnh_download_firmware();
-	end = ktime_get();
-	dev_info(mnh_sm_dev->dev, "SARU: iter:%d took %d ms to download firmware\n",
-		 iter, (unsigned)ktime_to_ms(ktime_sub(end, start)));
+	for (i = 0; i < ARRAY_SIZE(alloc_sizes); i++) {
+		iter++;
+		start = ktime_get();
+		ret = mnh_download_firmware_legacy(alloc_sizes[i] * 1024);
+		end = ktime_get();
+		dev_info(mnh_sm_dev->dev, "SARU: iter:%d took %d ms to download firmware\n",
+			iter, (unsigned)ktime_to_ms(ktime_sub(end, start)));
 
-	if (ret) {
-		dev_err(mnh_sm_dev->dev,
-			"%s: firmware download failed\n", __func__);
-		return ret;
+		if (ret) {
+			dev_err(mnh_sm_dev->dev,
+				"%s: firmware download failed\n", __func__);
+			return ret;
+		}
 	}
 
 	/* set the boot_args mask */
