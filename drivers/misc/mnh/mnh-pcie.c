@@ -141,6 +141,20 @@ void mnh_unmap_mem(
 EXPORT_SYMBOL(mnh_unmap_mem);
 
 /**
+ * Sync mapped host memory for MNH PCIe host access
+ * @param[in] dma_addr DMA address of the memory returned by mnh_map_mem()
+ * @param[in] size size of the memory region in bytes
+ * @param[in] direction DMA direction DMA_TO_DEVICE, etc.
+ */
+void mnh_sync_mem_for_device(
+	dma_addr_t dma_addr, size_t size, enum dma_data_direction direction)
+{
+	dma_sync_single_for_device(&mnh_dev->pdev->dev, dma_addr, size,
+				   direction);
+}
+EXPORT_SYMBOL(mnh_sync_mem_for_device);
+
+/**
  * API to read data from PCIE configuration space
  * @param[in] offset  offset into PCIE configuration space(BAR0)
  * @param[in] len     buffer size : supported size is 4
