@@ -737,10 +737,8 @@ int mnh_download_firmware_legacy(void)
 	}
 
 	/* Extract SBL from FIP image */
-	memcpy(&size, (uint8_t *)(fip_img->data + FIP_IMG_SBL_SIZE_OFFSET),
-		sizeof(size));
-	memcpy(&addr, (uint8_t *)(fip_img->data + FIP_IMG_SBL_ADDR_OFFSET),
-		sizeof(addr));
+	size = *(uint8_t *)(fip_img->data + FIP_IMG_SBL_SIZE_OFFSET);
+	addr = *(uint8_t *)(fip_img->data + FIP_IMG_SBL_ADDR_OFFSET);
 	mnh_sm_dev->sbl_size = size;
 
 	/* DMA transfer for SBL */
