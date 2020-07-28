@@ -480,6 +480,8 @@ static int mnh_transfer_firmware_contig(size_t fw_size, dma_addr_t src_addr,
 static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 	uint64_t dst_addr)
 {
+	uint32_t *fw_buf = mnh_sm_dev->firmware_buf;
+	size_t fw_buf_size = mnh_sm_dev->firmware_buf_size;
 	struct mnh_dma_element_t dma_blk;
 	int err = -EINVAL;
 	size_t sent = 0, size = 0, remaining;
@@ -488,33 +490,33 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 
 	mnh_sm_dev->image_loaded = FW_IMAGE_NONE;
 
+	dma_blk.src_addr = mnh_map_mem(fw_buf, fw_buf_size, DMA_TO_DEVICE);
+	if (!dma_blk.src_addr) {
+		dev_err(mnh_sm_dev->dev,
+			"Could not map dma buffer for FW download\n");
+		return -ENOMEM;
+	}
+
 	/*
 	 * 1. Prepare for buffer A
 	 * 2. Wait for buffer B to complete
 	 * 3. Start transferring buffer A; repeat
 	 */
 	while (remaining > 0) {
-		size = MIN(remaining, mnh_sm_dev->firmware_buf_size);
+		size = MIN(remaining, fw_buf_size);
 
 		if (mnh_sm_dev->image_loaded != FW_IMAGE_NONE) {
 			err = mnh_firmware_waitdownloaded();
-			mnh_unmap_mem(dma_blk.src_addr, size, DMA_TO_DEVICE);
 			if (err)
 				break;
 		}
 
-		memcpy(mnh_sm_dev->firmware_buf, fw_data + sent, size);
+		memcpy(fw_buf, fw_data + sent, size);
+		mnh_sync_mem_for_device(dma_blk.src_addr, fw_buf_size,
+					DMA_TO_DEVICE);
 
 		dma_blk.dst_addr = dst_addr + sent;
 		dma_blk.len = size;
-		dma_blk.src_addr = mnh_map_mem(mnh_sm_dev->firmware_buf, size,
-				DMA_TO_DEVICE);
-
-		if (!dma_blk.src_addr) {
-			dev_err(mnh_sm_dev->dev,
-				"Could not map dma buffer for FW download\n");
-			return -ENOMEM;
-		}
 
 		dev_dbg(mnh_sm_dev->dev, "FW download - AP(:0x%llx) to EP(:0x%llx), size(%d)\n",
 			 dma_blk.src_addr, dma_blk.dst_addr, dma_blk.len);
@@ -529,11 +531,10 @@ static int mnh_transfer_firmware(size_t fw_size, const uint8_t *fw_data,
 			 sent, remaining);
 	}
 
-	if (mnh_sm_dev->image_loaded != FW_IMAGE_NONE) {
+	if (mnh_sm_dev->image_loaded != FW_IMAGE_NONE)
 		err = mnh_firmware_waitdownloaded();
-		mnh_unmap_mem(dma_blk.src_addr, size, DMA_TO_DEVICE);
-	}
 
+	mnh_unmap_mem(dma_blk.src_addr, fw_buf_size, DMA_TO_DEVICE);
 	return err;
 }
 
