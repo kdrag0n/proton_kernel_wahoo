@@ -2413,11 +2413,12 @@ static struct miscdevice mnh_sm_miscdevice = {
 // modem pil mem
 //phys_addr_t phys = 0x8cc00000;
 // hyp log
-phys_addr_t phys = 0x85997000;
+//phys_addr_t phys = 0x85997000;
 // removed region (hyp)
 //phys_addr_t phys = 0x85800000;
 // adsp mem
 //phys_addr_t phys = 0x8b200000;
+phys_addr_t phys = 0;
 
 size_t dump_size = 4096;
 char *dump_buf;
@@ -2545,7 +2546,23 @@ static int mnh_fwd_hook(void)
 
 static int data_dump_dma_proc_show(struct seq_file *m, void *v)
 {
-	dump_virt = ioremap(phys, dump_size);
+	if (!phys) {
+		const struct firmware *ram_img;
+		struct page *page = alloc_pages(GFP_KERNEL, 4); // 64k
+		int err;
+		phys = __pfn_to_phys(page_to_pfn(page));
+		dump_virt = page_address(page);
+
+		err = request_firmware(&ram_img, "easel/ramdisk.img", mnh_sm_dev->dev);
+		if (err) {
+			dev_err(mnh_sm_dev->dev, "request ramdisk failed - %d\n", err);
+			return err;
+		}
+
+		memcpy(dump_virt, ram_img->data, SZ_64K);
+		release_firmware(ram_img);
+	}
+
 	if (!dump_buf) {
 		dump_buf = vmalloc(dump_size);
 		if (!dump_buf)
