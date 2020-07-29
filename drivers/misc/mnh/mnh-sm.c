@@ -2403,8 +2403,9 @@ phys_addr_t phys = 0x85997000;
 // adsp mem
 //phys_addr_t phys = 0x8b200000;
 
-size_t dump_size = 8192;
+size_t dump_size = 4096;
 char *dump_buf;
+char *dump_virt;
 u64 last_dump_time = 0;
 
 static int write_to_mnh(dma_addr_t src_addr, size_t size, const uint64_t dst_addr)
@@ -2423,6 +2424,11 @@ static int write_to_mnh(dma_addr_t src_addr, size_t size, const uint64_t dst_add
 
 	mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
 	reinit_completion(&mnh_sm_dev->dma_complete);
+	before = ktime_get_ns();
+	err = mnh_ddr_write(0, 4096, dump_virt);
+	pr_info("SARU: bar write op took %llu us\n", (ktime_get_ns() - before) / 1000);
+	if (err)
+		return err;
 	before = ktime_get_ns();
 	mnh_dma_sblk_start(MNH_PCIE_CHAN_0, DMA_AP2EP, &dma_blk);
 
@@ -2471,6 +2477,11 @@ static int read_from_mnh(const uint8_t *src_addr, size_t src_size, const uint8_t
 		mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
 		reinit_completion(&mnh_sm_dev->dma_complete);
 		before = ktime_get_ns();
+		err = mnh_ddr_read(0, 4096, (void *)(dst_addr + received));
+		pr_info("SARU: bar read op took %llu us\n", (ktime_get_ns() - before) / 1000);
+		if (err)
+			break;
+		before = ktime_get_ns();
 		mnh_dma_sblk_start(MNH_PCIE_CHAN_0, dir, &dma_blk);
 
 		err = mnh_firmware_waitdownloaded();
@@ -2518,6 +2529,7 @@ static int mnh_fwd_hook(void)
 
 static int data_dump_dma_proc_show(struct seq_file *m, void *v)
 {
+	dump_virt = ioremap(phys, dump_size);
 	if (!dump_buf) {
 		dump_buf = vmalloc(dump_size);
 		if (!dump_buf)
