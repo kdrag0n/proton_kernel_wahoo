@@ -191,6 +191,9 @@ struct mnh_sm_device {
 	/* state of the ddr channel */
 	enum mnh_ddr_status ddr_status;
 
+	/* mnh-ddr data */
+	struct mnh_ddr_data mnh_ddr_data;
+
 	/* pin used for ddr pad isolation */
 	struct gpio_desc *ddr_pad_iso_n_pin;
 
@@ -1380,8 +1383,9 @@ static ssize_t ddr_mbist_store(struct device *dev,
 		return -EINVAL;
 
 	mnh_pwr_set_state(MNH_PWR_S0);
-	mnh_ddr_po_init(mnh_sm_dev->dev, mnh_sm_dev->ddr_pad_iso_n_pin);
-	mnh_ddr_mbist(dev, val);
+	mnh_ddr_po_init(&mnh_sm_dev->mnh_ddr_data,
+			mnh_sm_dev->ddr_pad_iso_n_pin);
+	mnh_ddr_mbist(&mnh_sm_dev->mnh_ddr_data, val);
 	mnh_pwr_set_state(MNH_PWR_S4);
 
 	return count;
@@ -1491,7 +1495,8 @@ static int mnh_sm_config_ddr(void)
 	int ret;
 
 	/* Initialize DDR */
-	ret = mnh_ddr_po_init(mnh_sm_dev->dev, mnh_sm_dev->ddr_pad_iso_n_pin);
+	ret = mnh_ddr_po_init(&mnh_sm_dev->mnh_ddr_data,
+			      mnh_sm_dev->ddr_pad_iso_n_pin);
 	if (ret) {
 		dev_err(mnh_sm_dev->dev, "%s: ddr training failed (%d)\n",
 			__func__, ret);
@@ -1504,16 +1509,9 @@ static int mnh_sm_config_ddr(void)
 
 static int mnh_sm_resume_ddr(void)
 {
-	int ret;
-
 	/* deassert pad isolation, take ddr out of self-refresh mode */
-	ret = mnh_ddr_resume(mnh_sm_dev->dev);
-	if (ret) {
-		dev_err(mnh_sm_dev->dev, "%s: error resuming dram (%d)\n",
-			__func__, ret);
-		return ret;
-	}
-
+	mnh_ddr_resume(&mnh_sm_dev->mnh_ddr_data,
+		       mnh_sm_dev->ddr_pad_iso_n_pin);
 	mnh_sm_dev->ddr_status = MNH_DDR_ACTIVE;
 	return 0;
 }
@@ -1521,7 +1519,8 @@ static int mnh_sm_resume_ddr(void)
 static int mnh_sm_suspend_ddr(void)
 {
 	/* put ddr into self-refresh mode, assert pad isolation */
-	mnh_ddr_suspend(mnh_sm_dev->dev);
+	mnh_ddr_suspend(&mnh_sm_dev->mnh_ddr_data,
+			mnh_sm_dev->ddr_pad_iso_n_pin);
 	mnh_sm_dev->ddr_status = MNH_DDR_SELF_REFRESH;
 	return 0;
 }
@@ -1664,23 +1663,16 @@ static void mnh_sm_print_boot_trace(struct device (*dev))
 	int err;
 	uint32_t val;
 
-	err = mnh_config_read(MNH_BOOT_STAT, sizeof(val), &val);
-	if (err) {
-		dev_err(dev,
-			"%s: failed reading MNH_BOOT_STAT (%d)\n",
-			__func__, err);
-	} else {
-		dev_info(dev, "MNH_BOOT_STAT = 0x%x\n", val);
-	}
-
 	err = mnh_config_read(MNH_BOOT_TRACE, sizeof(val), &val);
+
 	if (err) {
 		dev_err(dev,
 			"%s: failed reading MNH_BOOT_TRACE (%d)\n",
 			__func__, err);
-	} else {
-		dev_info(dev, "MNH_BOOT_TRACE = 0x%x\n", val);
+		return;
 	}
+
+	dev_info(dev, "%s: MNH_BOOT_TRACE = 0x%x\n", __func__, val);
 }
 
 static void mnh_sm_enable_ready_irq(bool enable)
@@ -2441,7 +2433,7 @@ static int mnh_sm_probe(struct platform_device *pdev)
 	}
 
 	/* initialize mnh-ddr driver */
-	error = mnh_ddr_platform_init(dev);
+	error = mnh_ddr_platform_init(pdev, &mnh_sm_dev->mnh_ddr_data);
 	if (error) {
 		dev_err(dev, "failed to initialize mnh-ddr (%d)\n", error);
 		goto fail_probe_2;
