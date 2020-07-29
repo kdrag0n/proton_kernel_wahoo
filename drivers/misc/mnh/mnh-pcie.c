@@ -697,7 +697,6 @@ int mnh_dma_sblk_start(uint8_t chan, enum mnh_dma_chan_dir_t dir,
 	mnh_pcie_config_write(DMA_DAR_LOW_OFF, size, data);
 	data = UPPER(blk->dst_addr);
 	mnh_pcie_config_write(DMA_DAR_HIGH_OFF, size, data);
-	pr_info("SARU: cfg took %llu\n", ktime_get_ns() - before);
 
 	if (dir == DMA_EP2AP) { /* write */
 		data = DMA_WRITE_DOORBELL_OFF_MASK_CH_NUM & chan;

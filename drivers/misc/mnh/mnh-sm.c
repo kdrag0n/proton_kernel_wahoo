@@ -254,6 +254,8 @@ static enum mnh_boot_mode mnh_boot_mode = MNH_BOOT_MODE_PCIE;
 /* callback when easel enters and leaves the active state */
 static hotplug_cb_t mnh_hotplug_cb;
 
+u64 before;
+
 static int mnh_sm_get_val_from_buf(const char *buf, unsigned long *val)
 {
 	uint8_t *token;
@@ -375,10 +377,6 @@ static DEVICE_ATTR_RW(state);
 static int dma_callback(uint8_t chan, enum mnh_dma_chan_dir_t dir,
 		enum mnh_dma_trans_status_t status)
 {
-	dev_dbg(mnh_sm_dev->dev, "DMA_CALLBACK: ch:%d, dir:%s, status:%s\n",
-		 chan, (dir == DMA_AP2EP)?"READ(AP2EP)":"WRITE(EP2AP)",
-		 (status == DMA_DONE)?"DONE":"ABORT");
-
 	if (chan == MNH_PCIE_CHAN_0) {
 		if (mnh_sm_dev->image_loaded == FW_IMAGE_DOWNLOADING) {
 			if (status == DMA_DONE)
@@ -389,6 +387,7 @@ static int dma_callback(uint8_t chan, enum mnh_dma_chan_dir_t dir,
 				    FW_IMAGE_DOWNLOAD_FAIL;
 		}
 
+		pr_info("SARU: irq callback %s took %llu us\n", (dir == DMA_AP2EP) ? "read" : "write", (ktime_get_ns() - before) / 1000);
 		complete(&mnh_sm_dev->dma_complete);
 	} else {
 		dev_err(mnh_sm_dev->dev, "DMA_CALLBACK: incorrect channel and direction");
@@ -408,7 +407,6 @@ static int mnh_firmware_waitdownloaded(void)
 
 	switch (mnh_sm_dev->image_loaded) {
 	case FW_IMAGE_DOWNLOAD_SUCCESS:
-		dev_dbg(mnh_sm_dev->dev, "Firmware loaded!\n");
 		return 0;
 	case FW_IMAGE_DOWNLOAD_FAIL:
 		dev_err(mnh_sm_dev->dev, "Firmware load fail!\n");
@@ -2351,15 +2349,10 @@ static int write_to_mnh(dma_addr_t src_addr, size_t size, const uint64_t dst_add
 {
 	struct mnh_dma_element_t dma_blk;
 	int err = -EINVAL;
-	u64 before;
 
 	dma_blk.dst_addr = dst_addr;
 	dma_blk.len = size;
 	dma_blk.src_addr = src_addr;
-
-	dev_info(mnh_sm_dev->dev,
-		"FW download - AP(:0x%llx) to EP(:0x%llx), size(%d)\n",
-		dma_blk.src_addr, dma_blk.dst_addr, dma_blk.len);
 
 	mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
 	reinit_completion(&mnh_sm_dev->dma_complete);
@@ -2367,7 +2360,6 @@ static int write_to_mnh(dma_addr_t src_addr, size_t size, const uint64_t dst_add
 	mnh_dma_sblk_start(MNH_PCIE_CHAN_0, DMA_AP2EP, &dma_blk);
 
 	err = mnh_firmware_waitdownloaded();
-	pr_info("SARU: dma write op took %llu us\n", (ktime_get_ns() - before) / 1000);
 
 	return err;
 }
@@ -2381,7 +2373,6 @@ static int read_from_mnh(const uint8_t *src_addr, size_t src_size, const uint8_t
 	size_t received = 0, size = 0, remaining;
 	enum mnh_dma_chan_dir_t dir = DMA_EP2AP;
 	enum dma_data_direction dma_dir = dir == DMA_AP2EP ? DMA_TO_DEVICE : DMA_FROM_DEVICE;
-	u64 before;
 
 	remaining = src_size;
 
@@ -2405,9 +2396,6 @@ static int read_from_mnh(const uint8_t *src_addr, size_t src_size, const uint8_t
 		dma_blk.src_addr = (uint64_t)(src_addr + received);
 		dma_blk.len = size;
 
-		dev_info(mnh_sm_dev->dev, "FW download - AP(:0x%llx) to EP(:0x%llx), size(%d)\n",
-			 dma_blk.src_addr, dma_blk.dst_addr, dma_blk.len);
-
 		mnh_sm_dev->image_loaded = FW_IMAGE_DOWNLOADING;
 		reinit_completion(&mnh_sm_dev->dma_complete);
 		before = ktime_get_ns();
@@ -2419,13 +2407,10 @@ static int read_from_mnh(const uint8_t *src_addr, size_t src_size, const uint8_t
 
 		mnh_sync_mem_for_cpu(dma_blk.dst_addr, fw_buf_size,
 					dma_dir);
-		pr_info("SARU: dma read op took %llu us\n", (ktime_get_ns() - before) / 1000);
 		memcpy((void *)(dst_addr + received), fw_buf, size);
 
 		received += size;
 		remaining -= size;
-		dev_info(mnh_sm_dev->dev, "Received:%zd, Remaining:%zd\n",
-			 received, remaining);
 	}
 
 	mnh_unmap_mem(dma_blk.dst_addr, fw_buf_size, dma_dir);
