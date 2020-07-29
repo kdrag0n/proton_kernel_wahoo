@@ -342,7 +342,7 @@ int mnh_ddr_read(uint32_t offset,  uint32_t len, void *data)
 	if (offset > mnh_dev->bar_size[BAR_4] - len)
 		return -EINVAL; /* address invalid */
 
-	dev_dbg(&mnh_dev->pdev->dev, "Read DDR[0x%08x], len-%d, data-0x%0x",
+	dev_info(&mnh_dev->pdev->dev, "Read DDR[0x%08x], len-%d, data-0x%0x",
 		offset, len, *(uint32_t *)data);
 
 	memcpy(data, mnh_dev->ddr + offset, len);
@@ -379,7 +379,7 @@ int mnh_ddr_write(uint32_t offset, uint32_t len, void *data)
 		return -EINVAL; /*data pointer is NULL */
 	}
 
-	dev_dbg(&mnh_dev->pdev->dev, "Write DDR[0x%08x], len-%d, data-0x%x",
+	dev_info(&mnh_dev->pdev->dev, "Write DDR[0x%08x], len-%d, data-0x%x",
 			offset, len, *(uint32_t *)data);
 
 	memcpy(mnh_dev->ddr + offset, data, len);
