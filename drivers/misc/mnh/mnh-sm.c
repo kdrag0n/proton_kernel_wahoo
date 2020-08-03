@@ -13,6 +13,7 @@
  * more details.
  *
  */
+#define DEBUG
 
 #include <linux/atomic.h>
 #include <linux/device.h>

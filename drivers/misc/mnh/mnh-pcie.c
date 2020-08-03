@@ -14,6 +14,7 @@
  *
  */
 /* #define DEBUG */
+#define DEBUG
 #include <asm/dma-iommu.h>
 #include <linux/device.h>
 #include <linux/dma-mapping.h>
