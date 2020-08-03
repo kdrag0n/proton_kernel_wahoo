@@ -461,6 +461,7 @@ void *easelcomm_hw_build_scatterlist(struct easelcomm_kbuf_desc *buf_desc,
 		ret = -EINVAL;
 		break;
 	case EASELCOMM_DMA_BUFFER_USER:
+		pr_info("%s: buf type = user\n", __func__);
 		ret = mnh_sg_build(buf_desc->buf, buf_desc->buf_size,
 					&sg_ents, local_sg_info);
 		break;

@@ -659,12 +659,12 @@ int mnh_dma_sblk_start(uint8_t chan, enum mnh_dma_chan_dir_t dir,
 	uint8_t size = sizeof(data);
 
 	if (dir == DMA_EP2AP) { /* write */
-		dev_dbg(&mnh_dev->pdev->dev, "DMA WRITE[EP2AP]: CH%d\n", chan);
+		dev_info(&mnh_dev->pdev->dev, "DMA WRITE[EP2AP]: CH%d\n", chan);
 		data = DMA_WRITE_ENGINE_EN_OFF_MASK_ENABLE;
 		mnh_pcie_config_write(DMA_WRITE_ENGINE_EN_OFF, size, data);
 		mnh_pcie_config_write(DMA_WRITE_INT_MASK_OFF, size, 0);
 	} else if (dir == DMA_AP2EP) { /* read */
-		dev_dbg(&mnh_dev->pdev->dev, "DMA READ[AP2EP]: CH%d\n", chan);
+		dev_info(&mnh_dev->pdev->dev, "DMA READ[AP2EP]: CH%d\n", chan);
 		data = DMA_READ_ENGINE_EN_OFF_MASK_ENABLE;
 		mnh_pcie_config_write(DMA_READ_ENGINE_EN_OFF, size, data);
 		mnh_pcie_config_write(DMA_READ_INT_MASK_OFF, size, 0);
@@ -1091,12 +1091,12 @@ int mnh_dma_mblk_start(uint8_t chan, enum mnh_dma_chan_dir_t dir,
 	uint64_t addr = *start_addr;
 
 	if (dir == DMA_EP2AP) { /* write */
-		dev_dbg(&mnh_dev->pdev->dev, "DMA WRITE M[EP2AP]:CH%d\n", chan);
+		dev_info(&mnh_dev->pdev->dev, "DMA WRITE M[EP2AP]:CH%d\n", chan);
 		data = DMA_WRITE_ENGINE_EN_OFF_MASK_ENABLE;
 		mnh_pcie_config_write(DMA_WRITE_ENGINE_EN_OFF, size, data);
 		mnh_pcie_config_write(DMA_WRITE_INT_MASK_OFF, size, 0);
 	} else if (dir == DMA_AP2EP) { /* read */
-		dev_dbg(&mnh_dev->pdev->dev, "DMA READ M[AP2EP]:CH%d\n", chan);
+		dev_info(&mnh_dev->pdev->dev, "DMA READ M[AP2EP]:CH%d\n", chan);
 		data = DMA_READ_ENGINE_EN_OFF_MASK_ENABLE;
 		mnh_pcie_config_write(DMA_READ_ENGINE_EN_OFF, size, data);
 		mnh_pcie_config_write(DMA_READ_INT_MASK_OFF, size, 0);

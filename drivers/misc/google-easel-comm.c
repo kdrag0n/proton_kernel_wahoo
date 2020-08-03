@@ -1913,6 +1913,7 @@ static long easelcomm_ioctl_common(
 	int ret = 0;
 	struct easelcomm_user_state *user_state = file->private_data;
 	struct easelcomm_service *service;
+	char *istr;
 
 	if (_IOC_TYPE(cmd) != EASELCOMM_IOC_MAGIC)
 		return -EINVAL;
@@ -1922,6 +1923,21 @@ static long easelcomm_ioctl_common(
 
 	if (!easelcomm_up)
 		return -ESHUTDOWN;
+
+	switch (cmd) {
+	case EASELCOMM_IOC_REGISTER: istr = "EASELCOMM_IOC_REGISTER"; break;
+	case EASELCOMM_IOC_SENDMSG: istr = "EASELCOMM_IOC_SENDMSG"; break;
+	case EASELCOMM_IOC_READDATA: istr = "EASELCOMM_IOC_READDATA"; break;
+	case EASELCOMM_IOC_WRITEDATA: istr = "EASELCOMM_IOC_WRITEDATA"; break;
+	case EASELCOMM_IOC_SENDDMA: istr = "EASELCOMM_IOC_SENDDMA"; break;
+	case EASELCOMM_IOC_RECVDMA: istr = "EASELCOMM_IOC_RECVDMA"; break;
+	case EASELCOMM_IOC_WAITREPLY: istr = "EASELCOMM_IOC_WAITREPLY"; break;
+	case EASELCOMM_IOC_WAITMSG: istr = "EASELCOMM_IOC_WAITMSG"; break;
+	case EASELCOMM_IOC_SHUTDOWN: istr = "EASELCOMM_IOC_SHUTDOWN"; break;
+	case EASELCOMM_IOC_FLUSH: istr = "EASELCOMM_IOC_FLUSH"; break;
+	}
+	//pr_info("EASELCOMM IOCTL: %s is calling %s\n", current->comm, istr);
+	//dump_stack();
 
 	/* REGISTER is the only ioctl that doesn't need a service registered. */
 	if (cmd == EASELCOMM_IOC_REGISTER)

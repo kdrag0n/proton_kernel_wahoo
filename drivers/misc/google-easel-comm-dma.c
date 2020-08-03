@@ -460,11 +460,12 @@ static int easelcomm_client_perform_dma_sblk(
 	uint64_t client_addr = easelcomm_hw_scatterlist_sblk_addr(
 		msg_metadata->dma_xfer.sg_local);
 
-	dev_dbg(easelcomm_miscdev.this_device, "sblk dma msg %u:%s%llu dir=%d size=%u local=%llx saddr=%llx\n",
+	dev_info(easelcomm_miscdev.this_device, "sblk dma msg %u:%s%llu dir=%d size=%u local=%llx saddr=%llx\n",
 		service->service_id, easelcomm_msgid_prefix(msg_metadata),
 		msg_metadata->msg->desc.message_id, dir,
 		msg_metadata->msg->desc.dma_buf_size, client_addr,
 		msg_metadata->dma_xfer.server_addr);
+	dump_stack();
 	return easelcomm_hw_ap_dma_sblk_transfer(
 		client_addr, msg_metadata->dma_xfer.server_addr,
 		msg_metadata->msg->desc.dma_buf_size,
@@ -477,11 +478,12 @@ static int easelcomm_client_perform_dma_mblk(
 	struct easelcomm_message_metadata *msg_metadata,
 	enum easelcomm_dma_direction dir)
 {
-	dev_dbg(easelcomm_miscdev.this_device, "mblk dma msg %u:%s%llu dir=%d size=%u ll=%llx\n",
+	dev_info(easelcomm_miscdev.this_device, "mblk dma msg %u:%s%llu dir=%d size=%u ll=%llx\n",
 		service->service_id, easelcomm_msgid_prefix(msg_metadata),
 		msg_metadata->msg->desc.message_id, dir,
 		msg_metadata->msg->desc.dma_buf_size,
 		msg_metadata->dma_xfer.server_addr);
+	dump_stack();
 	return easelcomm_hw_ap_dma_mblk_transfer(
 		msg_metadata->dma_xfer.server_addr,
 		dir == EASELCOMM_DMA_DIR_TO_SERVER);
