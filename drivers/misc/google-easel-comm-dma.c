@@ -9,7 +9,6 @@
  */
 
 /* #define DEBUG */
-#define DEBUG
 
 #include <uapi/linux/google-easel-comm.h>
 #include "google-easel-comm-shared.h"
