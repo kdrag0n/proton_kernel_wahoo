@@ -9,6 +9,7 @@
  */
 
 /* #define DEBUG */
+#define DEBUG
 
 #ifdef CONFIG_GOOGLE_EASEL_AP
 #define EASELCOMM_AP 1
