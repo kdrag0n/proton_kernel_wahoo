@@ -2419,10 +2419,12 @@ phys_addr_t phys = 0x85997000;
 // adsp mem
 //phys_addr_t phys = 0x8b200000;
 
-size_t dump_size = 4096;
+size_t dump_size = 0x11ffff;
 char *dump_buf;
 char *dump_virt;
 u64 last_dump_time = 0;
+
+extern uint32_t mnh_check_iatu_bar2(uint32_t offset);
 
 static int write_to_mnh(dma_addr_t src_addr, size_t size, const uint64_t dst_addr)
 {
@@ -2518,22 +2520,24 @@ static int read_from_mnh(const uint8_t *src_addr, size_t src_size, const uint8_t
 	mnh_unmap_mem(dma_blk.dst_addr, fw_buf_size, dma_dir);
 	return err;
 }
+extern int mnh_config_read(uint32_t offset,  uint32_t len, uint32_t *data);
+static int read_mnh_sram(void)
+{
+	int ret;
+	uint32_t offset = mnh_check_iatu_bar2(HW_MNH_PCIE_BAR2_R1_ADDR_START); 
+	if (offset != HW_MNH_PCIE_BAR2_R1_ADDR_START)
+		return -ENOMEM;
 
+	ret = mnh_config_read(HW_MNH_PCIE_BAR2_R1_ADDR_START, 0x11ffff, dump_buf);
+	return ret;
+}
 static int mnh_fwd_hook(void)
 {
 	int err;
 	u64 before;
 
 	before = ktime_get_ns();
-	err = write_to_mnh(phys, dump_size, (uint64_t)HW_MNH_SBL_DOWNLOAD);
-	pr_info("SARU: write_to_mnh took %llu us\n", (ktime_get_ns() - before) / 1000);
-	if (err) {
-		pr_info("write err %d\n", err);
-		return err;
-	}
-
-	before = ktime_get_ns();
-	err = read_from_mnh((uint8_t *)HW_MNH_SBL_DOWNLOAD, dump_size, dump_buf);
+	err = read_mnh_sram();
 	pr_info("SARU: read_from_mnh took %llu us\n", (ktime_get_ns() - before) / 1000);
 	if (err) {
 		pr_info("read err %d\n", err);

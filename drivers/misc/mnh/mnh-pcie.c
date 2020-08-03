@@ -93,7 +93,7 @@ struct mnh_device {
 static struct mnh_device *mnh_dev;
 
 static void mnh_check_pci_resources(struct pci_dev *dev, int bar);
-static uint32_t mnh_check_iatu_bar2(uint32_t offset);
+uint32_t mnh_check_iatu_bar2(uint32_t offset);
 
 void *mnh_alloc_coherent(size_t size, dma_addr_t *dma_addr)
 {
@@ -254,17 +254,7 @@ int mnh_config_read(uint32_t offset,  uint32_t len, uint32_t *data)
 
 	new_offset = mnh_check_iatu_bar2(offset);
 
-	if (len == sizeof(uint32_t))
-		*data = ioread32(mnh_dev->config + new_offset);
-	else if (len == sizeof(uint16_t))
-		*data = ioread16(mnh_dev->config + new_offset);
-	else if (len == sizeof(uint8_t))
-		*data = ioread8(mnh_dev->config + new_offset);
-	else {
-		dev_err(&mnh_dev->pdev->dev, "%s: invalid len %d\n",
-			__func__, len);
-		return -EINVAL;
-	}
+	memcpy_fromio(data, mnh_dev->config + new_offset, len);
 
 	dev_dbg(&mnh_dev->pdev->dev, "Read Config[0x%08x] - 0x%x",
 		new_offset, *data);
@@ -301,17 +291,7 @@ int mnh_config_write(uint32_t offset, uint32_t len, uint32_t data)
 	dev_dbg(&mnh_dev->pdev->dev, "Write Config[0x%08x] - 0x%x",
 		new_offset, data);
 
-	if (len == sizeof(uint32_t))
-		iowrite32(data, mnh_dev->config + new_offset);
-	else if (len == sizeof(uint16_t))
-		iowrite16(data, mnh_dev->config + new_offset);
-	else if (len == sizeof(uint8_t))
-		iowrite8(data, mnh_dev->config + new_offset);
-	else {
-		dev_err(&mnh_dev->pdev->dev, "%s: invalid len %d\n",
-			__func__, len);
-		return -EINVAL;
-	}
+	memcpy_toio(mnh_dev->config + new_offset, data, len);
 
 	return 0;
 
@@ -1265,7 +1245,7 @@ static void mnh_check_pci_resources(struct pci_dev *dev, int bar)
  * Due to limitation of BAR2 size, we need to remap the IATU either for
  * SRAM or Cluster register region.
  */
-static uint32_t mnh_check_iatu_bar2(uint32_t offset)
+uint32_t mnh_check_iatu_bar2(uint32_t offset)
 {
 	uint8_t new_region;
 	uint64_t start_addr;
@@ -1289,7 +1269,7 @@ static uint32_t mnh_check_iatu_bar2(uint32_t offset)
 	}
 
 	if (mnh_dev->bar2_iatu_region != new_region) {
-		dev_dbg(&mnh_dev->pdev->dev, "IATU BAR2 reprogram - region#%d",
+		dev_info(&mnh_dev->pdev->dev, "IATU BAR2 reprogram - region#%d",
 			new_region);
 
 		iatu.mode = BAR_MATCH;
