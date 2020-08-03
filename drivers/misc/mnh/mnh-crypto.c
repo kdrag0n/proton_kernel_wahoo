@@ -12,7 +12,6 @@
  * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
  * more details.
  */
-#define DEBUG
 
 #include <crypto/pkcs7.h>
 #include <crypto/public_key.h>

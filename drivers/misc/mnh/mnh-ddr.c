@@ -13,7 +13,6 @@
 * more details.
 *
 */
-#define DEBUG
 
 #include "mnh-clk.h"
 #include "mnh-hwio.h"
