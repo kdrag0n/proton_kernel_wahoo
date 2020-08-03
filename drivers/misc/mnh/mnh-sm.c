@@ -2504,7 +2504,7 @@ static int read_from_mnh(const uint8_t *src_addr, size_t src_size, const uint8_t
 	mnh_unmap_mem(dma_blk.dst_addr, fw_buf_size, dma_dir);
 	return err;
 }
-extern int mnh_config_read(uint32_t offset,  uint32_t len, uint32_t *data);
+
 static int read_mnh_sram(void)
 {
 	int ret;
@@ -2512,7 +2512,17 @@ static int read_mnh_sram(void)
 	if (offset != HW_MNH_PCIE_BAR2_R1_ADDR_START)
 		return -ENOMEM;
 
-	ret = mnh_config_read(HW_MNH_PCIE_BAR2_R1_ADDR_START, 0x11ffff, dump_buf);
+	ret = mnh_config_read_long(HW_MNH_PCIE_BAR2_R1_ADDR_START, 0x11ffff, dump_buf);
+	if (ret)
+		return ret;
+
+	dump_buf[0x2090] = 'Z';
+	dump_buf[0x2091] = 'Z';
+
+	ret = mnh_config_write_long(HW_MNH_PCIE_BAR2_R1_ADDR_START, 0x11ffff, dump_buf);
+	if (ret)
+		return ret;
+
 	return ret;
 }
 static int mnh_fwd_hook(void)

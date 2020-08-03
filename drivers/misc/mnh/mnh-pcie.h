@@ -251,6 +251,7 @@ int mnh_pcie_config_write(uint32_t offset, uint32_t len, uint32_t data);
  * @return 0 if success or -EINVAL or -EFATAL on failure
  */
 int mnh_config_read(uint32_t offset,  uint32_t len, uint32_t *data);
+int mnh_config_read_long(uint32_t offset,  uint32_t len, uint32_t *data);
 
 /**
  * API to write data to MNH configuration space
@@ -260,6 +261,7 @@ int mnh_config_read(uint32_t offset,  uint32_t len, uint32_t *data);
  * @return 0 if success or -EINVAL or -EFATAL on failure
  */
 int mnh_config_write(uint32_t offset, uint32_t len, uint32_t data);
+int mnh_config_write_long(uint32_t offset, uint32_t len, uint32_t *data);
 
 /**
  * API to read data from MNH DDR space

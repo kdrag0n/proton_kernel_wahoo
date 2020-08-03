@@ -254,7 +254,17 @@ int mnh_config_read(uint32_t offset,  uint32_t len, uint32_t *data)
 
 	new_offset = mnh_check_iatu_bar2(offset);
 
-	memcpy_fromio(data, mnh_dev->config + new_offset, len);
+        if (len == sizeof(uint32_t))
+                *data = ioread32(mnh_dev->config + new_offset);
+        else if (len == sizeof(uint16_t))
+                *data = ioread16(mnh_dev->config + new_offset);
+        else if (len == sizeof(uint8_t))
+                *data = ioread8(mnh_dev->config + new_offset);
+        else {
+                dev_err(&mnh_dev->pdev->dev, "%s: invalid len %d\n",
+                        __func__, len);
+                return -EINVAL;
+        }
 
 	dev_dbg(&mnh_dev->pdev->dev, "Read Config[0x%08x] - 0x%x",
 		new_offset, *data);
@@ -265,6 +275,42 @@ int mnh_config_read(uint32_t offset,  uint32_t len, uint32_t *data)
 		return -EIO;
 }
 EXPORT_SYMBOL(mnh_config_read);
+
+/**
+ * API to read data from MNH configuration space
+ * @param[in] offset  offset into MNH Address space(BAR2)
+ * @param[in] len     buffer size : supported size is 1,2,4
+ * @param[in] data    data to be read into. Client must allocate
+ *                    the buffer for reading and pass the pointer
+ * @return 0 if success or -EINVAL or -EFATAL on failure
+ */
+int mnh_config_read_long(uint32_t offset,  uint32_t len, uint32_t *data)
+{
+	uint32_t new_offset;
+
+	if (!mnh_dev || !mnh_dev->pdev)
+		return -ENODEV;
+
+	if ((mnh_dev->pdev->current_state != PCI_D0) || !mnh_dev->powered)
+		return -EIO;
+
+	if (offset > HW_MNH_PCIE_BAR_2_ADDR_END - len) {
+		dev_err(&mnh_dev->pdev->dev, "Addr Invalid: %x", offset);
+		return -EINVAL; /* address invalid */
+	}
+
+	new_offset = mnh_check_iatu_bar2(offset);
+
+	memcpy_fromio(data, mnh_dev->config + new_offset, len);
+
+	dev_dbg(&mnh_dev->pdev->dev, "Read Config[0x%08x] - 0x%x",
+		new_offset, *data);
+
+	if (*data != 0xffffffff)
+		return 0;
+	else
+		return -EIO;
+}
 
 /**
  * API to write data to MNH configuration space
@@ -291,12 +337,53 @@ int mnh_config_write(uint32_t offset, uint32_t len, uint32_t data)
 	dev_dbg(&mnh_dev->pdev->dev, "Write Config[0x%08x] - 0x%x",
 		new_offset, data);
 
-	memcpy_toio(mnh_dev->config + new_offset, data, len);
+        if (len == sizeof(uint32_t))
+                iowrite32(data, mnh_dev->config + new_offset);
+        else if (len == sizeof(uint16_t))
+                iowrite16(data, mnh_dev->config + new_offset);
+        else if (len == sizeof(uint8_t))
+                iowrite8(data, mnh_dev->config + new_offset);
+        else {
+                dev_err(&mnh_dev->pdev->dev, "%s: invalid len %d\n",
+                        __func__, len);
+                return -EINVAL;
+        }
 
 	return 0;
 
 }
 EXPORT_SYMBOL(mnh_config_write);
+
+/**
+ * API to write data to MNH configuration space
+ * @param[in] offset  offset into MNH Address space(BAR2)
+ * @param[in] len	buffer size : supported size could be 4
+ * @param[in] data	 pointer to the data to be wrriten.
+ * @return 0 if success or -EINVAL or -EFATAL on failure
+ */
+int mnh_config_write_long(uint32_t offset, uint32_t len, uint32_t *data)
+{
+	uint32_t new_offset;
+
+	if (!mnh_dev || !mnh_dev->pdev)
+		return -ENODEV;
+
+	if ((mnh_dev->pdev->current_state != PCI_D0) || !mnh_dev->powered)
+		return -EIO;
+
+	if (offset > HW_MNH_PCIE_BAR_2_ADDR_END - len)
+		return -EINVAL; /* address invalid */
+
+	new_offset = mnh_check_iatu_bar2(offset);
+
+	dev_dbg(&mnh_dev->pdev->dev, "Write Config[0x%08x] - 0x%x",
+		new_offset, data);
+
+	memcpy_toio(mnh_dev->config + new_offset, data, len);
+
+	return 0;
+
+}
 
 /**
  * API to read data from MNH DDR space
