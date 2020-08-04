@@ -1954,7 +1954,6 @@ static int mnh_sm_set_state_locked(int state)
 		mnh_cpu_freq_change(CPU_FREQ_950);
 
 		/* have we downloaded firmware already? */
-		/*
 		if (mnh_sm_dev->firmware_downloaded)
 			ret = mnh_sm_resume();
 		else
@@ -1965,7 +1964,6 @@ static int mnh_sm_set_state_locked(int state)
 		ret = mnh_sm_hotplug_callback(MNH_HOTPLUG_IN);
 		if (ret)
 			mnh_sm_print_boot_trace(mnh_sm_dev->dev);
-		*/
 
 		break;
 	case MNH_STATE_SUSPEND:
