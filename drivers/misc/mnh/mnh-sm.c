@@ -2523,6 +2523,10 @@ static int read_mnh_sram(void)
 	if (ret)
 		return ret;
 
+	ret = mnh_config_read_long(HW_MNH_PCIE_BAR2_R1_ADDR_START, 0x11ffff, dump_buf);
+	if (ret)
+		return ret;
+
 	return ret;
 }
 static int mnh_fwd_hook(void)
