@@ -569,7 +569,7 @@ int easelcomm_receive_dma(
 	enum easelcomm_dma_direction dma_dir;
 	int ret = 0;
 
-	dev_dbg(easelcomm_miscdev.this_device,
+	dev_info(easelcomm_miscdev.this_device,
 			"RECVDMA msg %u:r%llu buf_type=%d buf_size=%u dma_buf_fd=%d\n",
 			service->service_id, buf_desc->message_id,
 			buf_desc->buf_type, buf_desc->buf_size,
@@ -668,7 +668,7 @@ int easelcomm_send_dma(
 	enum easelcomm_dma_direction dma_dir;
 	int ret = 0;
 
-	dev_dbg(easelcomm_miscdev.this_device,
+	dev_info(easelcomm_miscdev.this_device,
 			"SENDDMA msg %u:l%llu buf_type=%d buf_size=%u dma_buf_fd=%d\n",
 			service->service_id, buf_desc->message_id,
 			buf_desc->buf_type, buf_desc->buf_size,
