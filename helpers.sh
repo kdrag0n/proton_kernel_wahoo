@@ -277,7 +277,6 @@ function sktest() {
 	msg "Executing flasher on device..." && \
 	cat <<-END | ssh "$hostname" su -c sh -
 	export PATH="/sbin/.core/busybox:\$PATH"
-	am broadcast -a net.dinglisch.android.tasker.ACTION_TASK --es task_name "Kernel Flash Warning" &
 
 	unzip -p "$target_fn" META-INF/com/google/android/update-binary | $backslash
 	/system/bin/sh /proc/self/fd/0 "" "" "\$(readlink -f "$target_fn")" && $backslash
