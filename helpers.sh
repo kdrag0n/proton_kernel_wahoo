@@ -241,6 +241,7 @@ function ktest() {
 
 		# Execute flasher script
 		msg "Executing flasher on device..."
+		adb shell su -c setenforce 0
 		cat <<-END | adb shell su -c sh -
 		export PATH="/sbin/.core/busybox:\$PATH"
 
