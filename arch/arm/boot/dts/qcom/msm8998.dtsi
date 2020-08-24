@@ -1237,6 +1237,7 @@
 		compatible = "qcom,pil-tz-generic";
 		qcom,pas-id = <0xF>;
 		qcom,firmware-name = "ipa_fws";
+		status = "disabled";
 	};
 
 	qcom,chd_silver {
@@ -2096,7 +2097,7 @@
 		qcom,proxy-timeout-ms = <10000>;
 		qcom,smem-id = <423>;
 		qcom,sysmon-id = <1>;
-		status = "ok";
+		status = "disabled";
 		qcom,ssctl-instance-id = <0x14>;
 		qcom,firmware-name = "adsp";
 		memory-region = <&pil_adsp_mem>;
@@ -2173,7 +2174,7 @@
 		qcom,sysmon-id = <0>;
 		qcom,ssctl-instance-id = <0x12>;
 		qcom,qdsp6v62-1-2;
-		status = "ok";
+		status = "disabled";
 		memory-region = <&modem_mem>;
 		qcom,mem-protect-id = <0xF>;
 
@@ -2835,7 +2836,7 @@
 		qcom,sysmon-id = <3>;
 		qcom,ssctl-instance-id = <0x16>;
 		qcom,firmware-name = "slpi";
-		status = "ok";
+		status = "disabled";
 		memory-region = <&pil_slpi_mem>;
 
 		/* GPIO inputs from ssc */
@@ -2876,7 +2877,7 @@
 		qcom,proxy-timeout-ms = <100>;
 		qcom,firmware-name = "venus";
 		memory-region = <&pil_video_mem>;
-		status = "ok";
+		status = "disabled";
 	};
 
 	wdog: qcom,wdt@17817000 {
