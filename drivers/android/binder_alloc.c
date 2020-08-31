@@ -953,7 +953,7 @@ enum lru_status binder_alloc_free_page(struct list_head *item,
 		trace_binder_unmap_user_end(alloc, index);
 	}
 	up_read(&mm->mmap_sem);
-	mmput_async(mm);
+	mmput(mm);
 
 	trace_binder_unmap_kernel_start(alloc, index);
 
