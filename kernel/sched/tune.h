@@ -44,6 +44,7 @@ int schedtune_accept_deltas(int nrg_delta, int cap_delta,
 
 #define schedtune_cpu_boost(cpu)  0
 #define schedtune_task_boost(tsk) 0
+#define schedtune_prefer_idle(tsk) 0
 
 #define schedtune_exit_task(task) do { } while (0)
 
