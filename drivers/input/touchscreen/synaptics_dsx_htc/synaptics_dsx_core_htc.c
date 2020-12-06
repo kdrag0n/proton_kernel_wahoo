@@ -5707,7 +5707,6 @@ static int synaptics_rmi4_probe(struct platform_device *pdev)
 					"tp_direct_interrupt");
 
 	i2c_irq = synaptics_rmi4_i2c_irq();
-	irq_set_perf_affinity(i2c_irq);
 
 	rmi4_data->pm_i2c_req.type = PM_QOS_REQ_AFFINE_IRQ;
 	rmi4_data->pm_i2c_req.irq = i2c_irq;
@@ -5722,7 +5721,7 @@ static int synaptics_rmi4_probe(struct platform_device *pdev)
 #if IS_ENABLED(CONFIG_TOUCHSCREEN_SYNAPTICS_DSX_CORE_HTC)
 	retval = request_threaded_irq(rmi4_data->irq, synaptics_rmi4_hardirq,
 			synaptics_rmi4_irq,
-			IRQF_TRIGGER_HIGH | IRQF_ONESHOT | IRQF_PERF_CRITICAL,
+			IRQF_TRIGGER_HIGH | IRQF_ONESHOT,
 			PLATFORM_DRIVER_NAME,
 			rmi4_data);
 	if (retval < 0) {
